@@ -3,7 +3,7 @@
  * Créé le: 2024-03-01
  * Mis à jour le: 2024-05-01
  * Auteurs: Plamedi Ilunga
- * Contact: 2141363@cegeprdl.ca , 2038993@cegeprdl.ca ,2236622@cegeprdl.ca 
+ * Contact: 2038993@cegeprdl.ca
  * Version: 2.0
  * Description: Ce fichier définit la classe MyAPI
  * Licence: Arduino
