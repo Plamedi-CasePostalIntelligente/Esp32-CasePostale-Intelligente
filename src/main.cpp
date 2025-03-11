@@ -1,3 +1,13 @@
+/*
+ * Fichier: main.cpp
+ * Créé le: 2024-03-01
+ * Mis à jour le: 2024-05-01
+ * Auteurs: Plamedi Ilunga
+ * Contact: 2038993@cegeprdl.ca 
+ * Version: 2.0
+ * Description: Ce fichier implémente les méthodes de toutes mes classes 
+ * Licence: Arduino
+ */
 #include <Arduino.h>
 #include "MyWifi.h"
 #include "MyAPI.h"
