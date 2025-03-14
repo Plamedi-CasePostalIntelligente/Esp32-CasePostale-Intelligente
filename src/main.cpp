@@ -12,12 +12,14 @@
 #include "MyWifi.h"
 #include "MyAPI.h"
 #include "MyMQTTManager.h"
+#include "MyUltrasonique.h"
 #include <WiFi.h>
 
 int timeout = 10000; // 10 secondes de timeout
 MyWifi *mywifi;
 MyAPI *myapi;
 MyMQTTManager *mymqttmanager;
+MyUltrasonique *myUltrasonique;
 
 void setup()
 {
@@ -27,6 +29,8 @@ void setup()
   mywifi = new MyWifi();
   myapi = new MyAPI();
   mymqttmanager = new MyMQTTManager();
+  myUltrasonique = new MyUltrasonique();
+
 
   if (!mywifi)
   {
@@ -41,6 +45,11 @@ void setup()
   if (!mymqttmanager)
   {
     Serial.println("Erreur d'initialisation de la classe MyMQTTManager");
+  }
+
+  if (!myUltrasonique)
+  {
+    Serial.println("Erreur d'initialisation de la classe MyUltrasonique");
   }
   
   if(!mywifi->connect())
@@ -72,6 +81,15 @@ void setup()
     mymqttmanager->connect();
   }
 
+  if(!myUltrasonique->FindEmptyBoxDistance())
+  {
+    Serial.println("Erreur de récupération de la distance de la boîte vide");
+  }
+  else
+  {
+    Serial.println("Distance de la boîte vide récupérée avec succès!");
+  }
+
 
 }
 
@@ -79,7 +97,19 @@ void loop()
 {
   // put your main code here, to run repeatedly:
   mywifi->checkResetButton();
-  mymqttmanager->publishtopic1("Hello World in topic 1 !");
+  myUltrasonique->GetDistance();
+
+  if (myUltrasonique->IsBoxEmpty())
+  {
+    //Serial.println("La boîte est vide");
+    mymqttmanager->publishtopic1("Vide");
+  }
+  else
+  {
+    //Serial.println("La boîte est pleine");
+    mymqttmanager->publishtopic1("Pleine");
+    Serial.println("");
+  }
   mymqttmanager->clientLoop();
   delay(500);
 }

@@ -22,7 +22,7 @@ bool MyAPI::getBrokerInfo()
 
     Serial.println("Récupération des informations du broker...");
 
-    http.begin("http://192.168.113.138:3003/api/broker/infoBroker");
+    http.begin("https://casepostaleapi.merdyspeed.ca/api/broker/infoBroker");
     int httpCode = http.GET();
 
     if (httpCode == HTTP_CODE_OK)
