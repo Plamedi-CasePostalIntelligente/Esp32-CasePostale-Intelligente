@@ -5,8 +5,8 @@
 class MyUltrasonique
 {
 private:
-    int trig_Pin = 22;  // ESP32 pin GPIO23 connected to Ultrasonic Sensor's TRIG pin
-    int echo_Pin = 21 ;   // ESP32 pin GPIO22 connected to Ultrasonic Sensor's ECHO pin
+    int trig_Pin = 32;//6;//22;  // ESP32 pin GPIO22 connected to Ultrasonic Sensor's TRIG pin
+    int echo_Pin = 33;//7;//21 ;   // ESP32 pin GPIO21 connected to Ultrasonic Sensor's ECHO pin
     float duration_us; // Durée de l'onde ultrasonore en microsecondes
     float sum = 0;     // Somme des mesures pour la distance de référence
     float distance_cm;

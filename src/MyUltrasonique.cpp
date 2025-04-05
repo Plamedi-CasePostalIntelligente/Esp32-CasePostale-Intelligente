@@ -1,6 +1,5 @@
 #include <MyUltrasonique.h>
 
-
 MyUltrasonique::MyUltrasonique()
 {
     pinMode(trig_Pin, OUTPUT);
