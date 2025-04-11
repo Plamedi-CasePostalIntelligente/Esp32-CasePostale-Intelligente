@@ -1,8 +1,8 @@
 #include "MySolenoide.h"
 
-MySolenoide::MySolenoide()
+MySolenoide::MySolenoide(int _relayPinSolenoide)
 {
-    
+    relayPinSolenoide = _relayPinSolenoide;
 }
 
 MySolenoide::~MySolenoide()
@@ -13,9 +13,7 @@ bool MySolenoide::init()
 {
     // État initial: relais désactivé (solénoïde fermé)
     pinMode(relayPinSolenoide, OUTPUT);
-    digitalWrite(relayPinSolenoide, LOW);
     return true;
-
 }
 
 void MySolenoide::openCase()

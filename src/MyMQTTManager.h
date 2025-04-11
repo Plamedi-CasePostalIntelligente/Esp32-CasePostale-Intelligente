@@ -22,10 +22,32 @@ public:
     MyMQTTManager();
     bool init(); // Nouvelle méthode pour initialiser avec les infos de l'API
     void connect();
+
+    // Méthodes pour publier des messages sur les topics
     void publishtopic1(const char *message);
     void publishtopic2(const char *message);
+    void publishTempStatus(const char *message);
+    void publishOledStatus(const char *message);
+    void publishRfidStatus(const char *message);
+    void publishUltrasonicStatus(const char *message);
+    void publishTempError(float number);
+    void publishOledError(float number);
+    void publishRfidError(float number);
+    void publishUltrasonicError(float number);
+
+    // Méthodes pour subscrire aux topics
     void subscribetopic1();
     void subscribetopic2();
+    void subscribetempStatusTopic();
+    void subscribeoledStatusTopic();
+    void subscriberfidStatusTopic();
+    void subscribeultrasonicStatusTopic();
+    void subscribetempErrorTopic();
+    void subscribeoledErrorTopic();
+    void subscriberfidErrorTopic();
+    void subscribeultrasonicErrorTopic();
+
+
     void clientLoop();
     void setCallback();
     static void mqttCallbackHandler(char *topic, byte *payload, unsigned int length);
@@ -41,12 +63,31 @@ private:
 
     const char *topic1 = "test";
     const char *topic2 = "Skibidy/Desiree";
+    const char *tempStatusTopic = "casier1/temperature/status";
+    const char *oledStatusTopic = "casier1/oled/status";
+    const char *rfidStatusTopic = "casier1/rfid/status";
+    const char *ultrasonicStatusTopic = "casier1/ultrasonic/status";
+
+    const char *tempErrorTopic = "casier1/temperature/error";
+    const char *oledErrorTopic = "casier1/oled/error";
+    const char *rfidErrorTopic = "casier1/rfid/error";
+    const char *ultrasonicErrorTopic = "casier1/ultrasonic/error";
+
+
     WiFiClient espClient;
     PubSubClient client;
     MyAPI api;
     Preferences preferences;
     String messageFirstTopic;
     String messageSecondTopic;
+    String messagetempStatusTopic;
+    String messageoledStatusTopic;
+    String messagerfidStatusTopic;
+    String messageultrasonicStatusTopic;
+    String messagetempErrorTopic;
+    String messageoledErrorTopic;
+    String messagerfidErrorTopic;
+    String messageultrasonicErrorTopic;
 };
 
 #endif

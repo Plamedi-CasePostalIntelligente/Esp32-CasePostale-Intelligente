@@ -40,9 +40,9 @@ public:
 
     // Méthodes pour la gestion des menus avec 2 boutons
     void displayMainMenu();
-    void displaySubMenu(int subMenuIndex, float temperature);
+    void displaySubMenu(int subMenuIndex, float temperature ,const char *etatCasier1,const char *etatCasier2,const char *etatWifi);
     void moveLeftButton();
-    void moveRightButton(float temp);
+    void moveRightButton(float temp ,const char *etatCasier1,const char *etatCasier2,const char *etatWifi);
     int getCurrentMenuIndex();
     int getCurrentSubMenu();
 

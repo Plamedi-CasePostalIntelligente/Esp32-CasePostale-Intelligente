@@ -1,13 +1,3 @@
-/*
- * Fichier: main.cpp
- * Créé le: 2024-03-01
- * Mis à jour le: 2024-05-01
- * Auteurs: Plamedi Ilunga
- * Contact: 2038993@cegeprdl.ca
- * Version: 2.0
- * Description: Ce fichier implémente les méthodes de toutes mes classes
- * Licence: Arduino
- */
 #include <Arduino.h>
 #include "MyWifi.h"
 #include "MyAPI.h"
@@ -16,7 +6,6 @@
 #include <WiFi.h>
 #include "MyRFID.h"
 #include "MySolenoide.h"
-#include <Arduino.h>
 #include "MyOled.h"
 #include "MyTemp.h"
 #include "MyButton.h"
@@ -24,16 +13,18 @@
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET 4
-#define BTN_RIGHT 4 // Bouton droit (entrée/sortie)
+#define BTN_RIGHT 4  // Bouton droit
 #define BTN_LEFT 16
+int RELAY_PIN_SOLENOIDE1 = 26; // GPIO26
+int RELAY_PIN_SOLENOIDE2 = 27; // GPIO27
 
-int timeout = 10000; // 10 secondes de timeout
 MyWifi *mywifi;
 MyAPI *myapi;
 MyMQTTManager *mymqttmanager;
 MyUltrasonique *myUltrasonique;
 MyRFID *myRFID;
-MySolenoide *mySolenoide;
+MySolenoide *mySolenoide1 = NULL;
+MySolenoide *mySolenoide2 = NULL;
 MyTemp *mytemp = NULL;
 MyOled *myOled = NULL;
 MyButton *myButtonLEFT = NULL;
@@ -42,188 +33,248 @@ MyButton *myButtonRIGHT = NULL;
 int buttonleftState;
 int buttonrightState;
 float temperature;
+const char *etatCasier1;
+const char *etatCasier2;
+const char *etatWifi;
+String nombreRfid = "";
+unsigned long solenoidOpenTime = 0; // Temps d'ouverture des solénoïdes
+const unsigned long SOLENOID_TIMEOUT = 5000; // 5 secondes avant fermeture
+unsigned long lastComponentCheck = 0; // Dernière vérification des composants
+const unsigned long CHECK_INTERVAL = 20000; // Vérifier toutes les 10 secondes
+
+// Fonction pour vérifier périodiquement l'état des composants
+void checkComponents() {
+    // Vérifier MyTemp
+    if (mytemp && !mytemp->init()) {
+        mymqttmanager->publishTempStatus("Erreur: Capteur de température non détecté");
+    } else if (mytemp && mytemp->init()) {
+        mymqttmanager->publishTempStatus("Capteur de température opérationnel");
+    }
+
+    // Vérifier MyOled
+    if (myOled && !myOled->init(2)) {
+        mymqttmanager->publishOledStatus("Erreur: Écran OLED non détecté");
+    } else if (myOled && myOled->init(2)) {
+        mymqttmanager->publishOledStatus("Écran OLED opérationnel");
+    }
+
+    // Vérifier MyRFID
+    if (myRFID && !myRFID->IsRFIDDetected()) {
+        mymqttmanager->publishRfidStatus("Erreur: Module RFID non détecté");
+    } else if (myRFID && myRFID->IsRFIDDetected()) {
+        mymqttmanager->publishRfidStatus("Module RFID opérationnel");
+    }
+
+    // Vérifier MyUltrasonique
+    if (myUltrasonique && !myUltrasonique->FindEmptyBoxDistance()) {
+        mymqttmanager->publishUltrasonicStatus("Erreur: Capteur ultrasonique non détecté");
+    } else if (myUltrasonique && myUltrasonique->FindEmptyBoxDistance()) {
+        mymqttmanager->publishUltrasonicStatus("Capteur ultrasonique opérationnel");
+    }
+}
 
 void setup()
 {
-  // put your setup code here, to run once:
-  Serial.begin(9600);
+    Serial.begin(9600);
 
-  mywifi = new MyWifi();
-  myapi = new MyAPI();
-  mymqttmanager = new MyMQTTManager();
-  myUltrasonique = new MyUltrasonique();
-  myRFID = new MyRFID();
-  myButtonLEFT = new MyButton(BTN_LEFT);
-  myButtonRIGHT = new MyButton(BTN_RIGHT);
-  mytemp = new MyTemp();
-  myOled = new MyOled(&Wire, OLED_RESET, SCREEN_HEIGHT, SCREEN_WIDTH);
-  // mySolenoide = new MySolenoide();
-
-  while (!mywifi)
-  {
-    Serial.println("Erreur d'instanciation de la classe MyWifi");
-  }
-
-  while (!myapi)
-  {
-    Serial.println("Erreur d'instanciation de la classe MyAPI");
-  }
-
-  while (!mymqttmanager)
-  {
-    Serial.println("Erreur d'instanciation de la classe MyMQTTManager");
-  }
-
-  while (!myUltrasonique)
-  {
-    Serial.println("Erreur d'instanciation de la classe MyUltrasonique");
-  }
-
-  while (!myRFID)
-  {
-    Serial.println("Erreur d'instanciation de la classe MyRFID");
-  }
-  /*
-  while (!mySolenoide)
-  {
-    Serial.println("Erreur d'instanciation de la classe MySolenoide");
-  }*/
-
-  if (!myButtonLEFT || !myButtonRIGHT)
-  {
-    Serial.println("Erreur d'instanciation de la classe MyButton");
-  }
-
-  if (!mytemp)
-  {
-    Serial.println("Erreur d'instanciation de la classe MyTemp");
-  }
-
-  if (!mytemp->init())
-  {
-    Serial.println("Erreur d'initialisation de la classe MyTemp");
-  }
-  mytemp->setUniteUsed(MyTemp::UNITY_CELSIUS);
-
-  if (!myOled || myOled->init(2) != 0)
-  { // 2 secondes de splash, retourne 0 si OK
-    Serial.println("Erreur d'instanciation ou d'initialisation de la classe MyOled");
-    while (1)
-      ; // Boucle infinie si échec
-  }
-
-  if (!mywifi->connect())
-  {
-    Serial.println("Erreur de connexion WiFi");
-  }
-  else
-  {
-    Serial.println("Connexion WiFi établie!");
-    Serial.print("Adresse IP: ");
-    Serial.println(mywifi->getLocalIP());
-  }
-
-  if (!myapi->getBrokerInfo())
-  {
-    Serial.println("Erreur de récupération des informations du broker");
-  }
-  else
-  {
-    Serial.println("Informations du broker récupérées avec succès!");
-  }
-
-  if (!mymqttmanager->init())
-  {
-    Serial.println("Erreur d'initialisation du client MQTT");
-  }
-  else
-  {
-    mymqttmanager->connect();
-  }
-
-  if (!myUltrasonique->FindEmptyBoxDistance())
-  {
-    Serial.println("Erreur de récupération de la distance de la boîte vide");
-  }
-  else
-  {
-    Serial.println("Distance de la boîte vide récupérée avec succès!");
-  }
-
-  if (!myRFID->IsRFIDDetected())
-  {
-    Serial.println("Erreur de détection du module RFID");
-  }
-  else
-  {
-    Serial.println("Module RFID détecté avec succès!");
-  }
-  /*
-    if(!mySolenoide->init())
-    {
-      Serial.println("Erreur d'initialisation de la classe MySolenoide");
+    // Instanciation des objets
+    mywifi = new MyWifi();
+    if (!mywifi) {
+        Serial.println("Erreur d'instanciation de la classe MyWifi");
     }
-    else
-    {
-      Serial.println("Initialisation de la classe MySolenoide réussie!");
-    }*/
+
+    myapi = new MyAPI();
+    if (!myapi) {
+        Serial.println("Erreur d'instanciation de la classe MyAPI");
+    }
+
+    mymqttmanager = new MyMQTTManager();
+    if (!mymqttmanager) {
+        Serial.println("Erreur d'instanciation de la classe MyMQTTManager");
+    }
+
+    if (!mymqttmanager->init()) {
+        Serial.println("Erreur d'initialisation du client MQTT");
+    } else {
+        mymqttmanager->connect();
+    }
+
+    myUltrasonique = new MyUltrasonique();
+    if (!myUltrasonique) {
+        Serial.println("Erreur d'instanciation de la classe MyUltrasonique");
+        if (mymqttmanager && mymqttmanager->init()) {
+            mymqttmanager->publishUltrasonicStatus("Erreur d'instanciation de MyUltrasonique");
+        }
+    }
+
+    myRFID = new MyRFID();
+    if (!myRFID) {
+        Serial.println("Erreur d'instanciation de la classe MyRFID");
+        if (mymqttmanager && mymqttmanager->init()) {
+            mymqttmanager->publishRfidStatus("Erreur d'instanciation de MyRFID");
+        }
+    }
+
+    myButtonLEFT = new MyButton(BTN_LEFT);
+    myButtonRIGHT = new MyButton(BTN_RIGHT);
+    if (!myButtonLEFT || !myButtonRIGHT) {
+        Serial.println("Erreur d'instanciation de la classe MyButton");
+    }
+
+    mytemp = new MyTemp();
+    if (!mytemp) {
+        Serial.println("Erreur d'instanciation de la classe MyTemp");
+        if (mymqttmanager && mymqttmanager->init()) {
+            mymqttmanager->publishTempStatus("Erreur d'instanciation de MyTemp");
+        }
+    }
+
+    myOled = new MyOled(&Wire, OLED_RESET, SCREEN_HEIGHT, SCREEN_WIDTH);
+    if (!myOled) {
+        Serial.println("Erreur d'instanciation de la classe MyOled");
+        if (mymqttmanager && mymqttmanager->init()) {
+            mymqttmanager->publishOledStatus("Erreur d'instanciation de MyOled");
+        }
+    }
+
+    mySolenoide1 = new MySolenoide(RELAY_PIN_SOLENOIDE1);
+    mySolenoide2 = new MySolenoide(RELAY_PIN_SOLENOIDE2);
+    if (!mySolenoide1 || !mySolenoide2) {
+        Serial.println("Erreur d'instanciation de la classe MySolenoide");
+        while (1);
+    }
+
+    // Initialisation des composants
+    if (mytemp && !mytemp->init()) {
+        Serial.println("Erreur d'initialisation de la classe MyTemp");
+        if (mymqttmanager && mymqttmanager->init()) {
+            mymqttmanager->publishTempStatus("Erreur d'initialisation de MyTemp");
+        }
+    }
+    if (mytemp) {
+        mytemp->setUniteUsed(MyTemp::UNITY_CELSIUS);
+    }
+
+    if (myOled && myOled->init(2) != 0) {
+        Serial.println("Erreur d'initialisation de la classe MyOled");
+        if (mymqttmanager && mymqttmanager->init()) {
+            mymqttmanager->publishOledStatus("Erreur d'initialisation de MyOled");
+        }
+        while (1);
+    }
+
+    if (!mywifi->connect()) {
+        Serial.println("Erreur de connexion WiFi");
+        etatWifi = "Erreur WiFi";
+    } else {
+        etatWifi = "WiFi OK";
+        Serial.println("Connexion WiFi établie!");
+        Serial.print("Adresse IP: ");
+        Serial.println(mywifi->getLocalIP());
+    }
+
+    if (!myapi->getBrokerInfo()) {
+        Serial.println("Erreur de récupération des informations du broker");
+    }
+
+    if (myUltrasonique && !myUltrasonique->FindEmptyBoxDistance()) {
+        Serial.println("Erreur de calibration de la boîte vide");
+        if (mymqttmanager && mymqttmanager->init()) {
+            mymqttmanager->publishUltrasonicStatus("Erreur de calibration de la boîte vide");
+        }
+        while (1);
+    }
+
+    if (myRFID && !myRFID->IsRFIDDetected()) {
+        Serial.println("Erreur de détection du module RFID");
+        if (mymqttmanager && mymqttmanager->init()) {
+            mymqttmanager->publishRfidStatus("Erreur de détection du module RFID");
+        }
+    }
+
+    if (mySolenoide1 && !mySolenoide1->init()) {
+        Serial.println("Erreur d'initialisation du solénoïde 1");
+    }
+
+    if (mySolenoide2 && !mySolenoide2->init()) {
+        Serial.println("Erreur d'initialisation du solénoïde 2");
+    }
+
+    // Fermer les solénoïdes au démarrage
+    if (mySolenoide1) mySolenoide1->closeCase();
+    if (mySolenoide2) mySolenoide2->closeCase();
 }
 
 void loop()
 {
-  // put your main code here, to run repeatedly:
-  mywifi->checkResetButton();
-  myUltrasonique->GetDistance();
-  myRFID->ReadCardSerial();
+    mywifi->checkResetButton();
 
-  buttonleftState = myButtonLEFT->ButtonPressed();
-  buttonrightState = myButtonRIGHT->ButtonPressed();
-  temperature = mytemp->getTemperature();
+    // Vérification périodique des composants
+    if (millis() - lastComponentCheck >= CHECK_INTERVAL) {
+        checkComponents();
+        lastComponentCheck = millis(); // Mettre à jour le temps de la dernière vérification
+    }
 
-  if (buttonleftState == 1)
-  {
-    Serial.println(buttonleftState);
-    myOled->moveLeftButton();
-    delay(100); // Anti-rebond
-  }
+    // Lecture de la carte RFID
+    String newCardRead = myRFID ? myRFID->ReadCardSerial() : "";
+    if (newCardRead != "") {
+        nombreRfid = newCardRead;
+        Serial.println("UID détecté: " + nombreRfid);
+    }
 
-  if (buttonrightState == 1)
-  {
-    Serial.println(buttonrightState);
-    myOled->moveRightButton(temperature); // Passe la température réelle
-    delay(100);
-  }
+    buttonleftState = myButtonLEFT ? myButtonLEFT->ButtonPressed() : 0;
+    buttonrightState = myButtonRIGHT ? myButtonRIGHT->ButtonPressed() : 0;
+    temperature = mytemp ? mytemp->getTemperature() : NAN;
 
-  // Affiche toujours quelque chose
-  if (myOled->getCurrentSubMenu() == -1)
-  {
-    myOled->displayMainMenu(); // Menu principal si pas dans un sous-menu
-  }
-  else
-  {
-    myOled->displaySubMenu(myOled->getCurrentSubMenu(), temperature); // Sous-menu avec température réelle
-  }
+    if (buttonleftState == 1) {
+        Serial.println("Bouton gauche pressé");
+        if (myOled) myOled->moveLeftButton();
+        delay(100);
+    }
 
-  String nombreRfid = myRFID->ReadCardSerial();
-  /*
-  if(nombreRfid=="BB776813")
-  {
-    mySolenoide->openCase();
-    delay(5000);
-  }
-  mySolenoide->closeCase();*/
-  Serial.println("UID: " + nombreRfid);
+    if (buttonrightState == 1) {
+        Serial.println("Bouton droit pressé");
+        if (myOled) myOled->moveRightButton(temperature, etatCasier1, etatCasier2, etatWifi);
+        delay(100);
+    }
 
-  if (myUltrasonique->IsBoxEmpty())
-  {
-    // Serial.println("La boîte est vide");
-    mymqttmanager->publishtopic1("Vide");
-  }
-  else
-  {
-    // Serial.println("La boîte est pleine");
-    mymqttmanager->publishtopic1("Pleine");
-  }
-  mymqttmanager->clientLoop();
-  delay(1000);
+    if (myOled) {
+        if (myOled->getCurrentSubMenu() == -1) {
+            myOled->displayMainMenu();
+        } else {
+            myOled->displaySubMenu(myOled->getCurrentSubMenu(), temperature, etatCasier1, etatCasier2, etatWifi);
+        }
+    }
+
+    // Gestion Ultrasonique (pour affichage uniquement)
+    bool boxEmpty = myUltrasonique ? myUltrasonique->IsBoxEmpty() : false;
+    if (boxEmpty) {
+        etatCasier1 = "Vide";
+        etatCasier2 = "Vide";
+    } else {
+        etatCasier1 = "Pleine";
+        etatCasier2 = "Pleine";
+    }
+
+    // Gestion RFID et Solénoïdes
+    if (nombreRfid == "5A79FC03" && boxEmpty && solenoidOpenTime == 0) {
+        Serial.println("Puce RFID valide détectée et boîte vide : ouverture des solénoïdes");
+        if (mySolenoide1) mySolenoide1->openCase();
+        if (mySolenoide2) mySolenoide2->openCase();
+        solenoidOpenTime = millis(); // Enregistrer le moment de l'ouverture
+        nombreRfid = ""; // Réinitialise immédiatement
+        if (myRFID) myRFID->Reset(); // Réinitialise le module RFID
+    }
+
+    // Fermeture automatique après 5 secondes
+    if (solenoidOpenTime > 0 && (millis() - solenoidOpenTime >= SOLENOID_TIMEOUT)) {
+        Serial.println("Délai de 5 secondes écoulé : fermeture des solénoïdes");
+        if (mySolenoide1) mySolenoide1->closeCase();
+        if (mySolenoide2) mySolenoide2->closeCase();
+        solenoidOpenTime = 0; // Réinitialiser
+        if (myRFID) myRFID->Reset(); // Réinitialise à nouveau
+    }
+
+    if (mymqttmanager) mymqttmanager->clientLoop();
+    delay(500); // Réactivité accrue
 }

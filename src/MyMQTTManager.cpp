@@ -63,6 +63,80 @@ void MyMQTTManager::publishtopic2(const char *message)
     client.publish(topic2, message);
 }
 
+void MyMQTTManager::publishTempStatus(const char *message)
+{
+    client.publish(tempStatusTopic, message);
+}
+
+void MyMQTTManager::publishOledStatus(const char *message)
+{
+    client.publish(oledStatusTopic, message);
+}
+
+void MyMQTTManager::publishRfidStatus(const char *message)
+{
+    client.publish(rfidStatusTopic, message);
+}
+
+void MyMQTTManager::publishUltrasonicStatus(const char *message)
+{
+    client.publish(ultrasonicStatusTopic, message);
+}
+
+void MyMQTTManager::publishTempError(float number)
+{
+    String message = floatToString(number, 1);
+    client.publish(tempErrorTopic, message.c_str());
+}
+
+void MyMQTTManager::publishOledError(float number)
+{
+    String message = floatToString(number, 1);
+    client.publish(oledErrorTopic, message.c_str());
+}
+
+void MyMQTTManager::publishRfidError(float number)
+{
+    String message = floatToString(number, 1);
+    client.publish(rfidErrorTopic, message.c_str());
+}
+
+void MyMQTTManager::publishUltrasonicError(float number)
+{
+    String message = floatToString(number, 1);
+    client.publish(ultrasonicErrorTopic, message.c_str());
+}
+
+void MyMQTTManager::subscribetempStatusTopic()
+{
+    client.subscribe(tempStatusTopic);
+}
+
+void MyMQTTManager::subscribeoledStatusTopic()
+{
+    client.subscribe(oledStatusTopic);
+}
+
+void MyMQTTManager::subscribetempErrorTopic()
+{
+    client.subscribe(tempErrorTopic);
+}
+
+void MyMQTTManager::subscriberfidStatusTopic()
+{
+    client.subscribe(rfidStatusTopic);
+}
+
+void MyMQTTManager::subscribeultrasonicStatusTopic()
+{
+    client.subscribe(ultrasonicStatusTopic);
+}
+
+void MyMQTTManager::subscribeoledErrorTopic()
+{
+    client.subscribe(oledErrorTopic);
+}
+
 void MyMQTTManager::subscribetopic1()
 {
     client.subscribe(topic1);
@@ -93,13 +167,56 @@ void MyMQTTManager::mqttCallbackHandler(char *topic, byte *payload, unsigned int
     {
         instance->messageFirstTopic = message;
        // Serial.println("Message reçu sur test: " + String(message));
-        Serial.println("Message reçu sur test: " + String(instance->messageFirstTopic));
+       // Serial.println("Message reçu sur test: " + String(instance->messageFirstTopic));
     }
     else if (strcmp(topic, "Skibidy/Desiree") == 0)
     {
         instance->messageSecondTopic = message;
-        Serial.println("Message reçu sur test2: " + String(message));
-        Serial.println("Message reçu sur test2: " + String(instance->messageSecondTopic));  
+       // Serial.println("Message reçu sur test2: " + String(message));
+       // Serial.println("Message reçu sur test2: " + String(instance->messageSecondTopic));  
+    }else if (strcmp(topic, "casier1/temperature/status") == 0)
+    {
+        instance->messagetempStatusTopic = message;
+        // Serial.println("Message reçu sur casier1/temperature/status: " + String(message));
+    }
+    else if (strcmp(topic, "casier1/oled/status") == 0)
+    {
+        instance->messageoledStatusTopic = message;
+        // Serial.println("Message reçu sur casier1/oled/status: " + String(message));
+    }
+    else if (strcmp(topic, "casier1/rfid/status") == 0)
+    {
+        instance->messagerfidStatusTopic = message;
+        // Serial.println("Message reçu sur casier1/rfid/status: " + String(message));
+    }
+    else if (strcmp(topic, "casier1/ultrasonic/status") == 0)
+    {
+        instance->messageultrasonicStatusTopic = message;
+        // Serial.println("Message reçu sur casier1/ultrasonic/status: " + String(message));
+    }
+    else if (strcmp(topic, "casier1/temperature/error") == 0)
+    {
+        instance->messagetempErrorTopic = message;
+        // Serial.println("Message reçu sur casier1/temperature/error: " + String(message));
+    }
+    else if (strcmp(topic, "casier1/oled/error") == 0)
+    {
+        instance->messageoledErrorTopic = message;
+        // Serial.println("Message reçu sur casier1/oled/error: " + String(message));
+    }
+    else if (strcmp(topic, "casier1/rfid/error") == 0)
+    {
+        instance->messagerfidErrorTopic = message;
+        // Serial.println("Message reçu sur casier1/rfid/error: " + String(message));
+    }
+    else if (strcmp(topic, "casier1/ultrasonic/error") == 0)
+    {
+        instance->messageultrasonicErrorTopic = message;
+        // Serial.println("Message reçu sur casier1/ultrasonic/error: " + String(message));
+    }
+    else
+    {
+        Serial.println("Message reçu sur un topic inconnu: " + String(topic));
     }
 }
 

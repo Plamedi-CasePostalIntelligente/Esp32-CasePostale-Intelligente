@@ -92,7 +92,7 @@ void MyOled::displayMainMenu() {
 }
 
 // Affichage des sous-menus
-void MyOled::displaySubMenu(int subMenuIndex, float temperature) {
+void MyOled::displaySubMenu(int subMenuIndex, float temperature ,const char *etatCasier1,const char *etatCasier2, const char *etatWifi) {
     clearDisplay();
     setTextSize(1);
     setTextColor(SSD1306_WHITE);
@@ -101,11 +101,12 @@ void MyOled::displaySubMenu(int subMenuIndex, float temperature) {
     switch (subMenuIndex) {
         case 0: // État C1
             printIt(10, 18, "Casier 1", false);
-            printIt(10, 28, "Etat: Plein", true);
+            printIt(10, 28, "Etat: ", true);
+            printIt(10, 38, etatCasier1 , true);
             break;
         case 1: // État C2
             printIt(10, 18, "Casier 2", false);
-            printIt(10, 28, "Etat: Vide", true);
+            printIt(10, 28, "Etat: ", true);
             break;
         case 2: // Température
             printIt(10, 18, "Temperature", false);
@@ -115,7 +116,7 @@ void MyOled::displaySubMenu(int subMenuIndex, float temperature) {
             break;
         case 3: // Statut Système
             printIt(10, 18, "Statut System", false);
-            printIt(10, 28, "Wi-Fi: OK", true);
+            printIt(10, 28, etatWifi, true);
             break;
     }
 }
@@ -133,10 +134,10 @@ void MyOled::moveLeftButton() {
 }
 
 // Bouton droit : Entrée ou sortie du sous-menu
-void MyOled::moveRightButton(float temp) {
+void MyOled::moveRightButton(float temp ,const char *etatCasier1,const char *etatCasier2,const char *etatWifi) {
     if (currentSubMenu == -1) {
         currentSubMenu = currentMenuIndex;
-        displaySubMenu(currentSubMenu, temp); // Passe la température réelle
+        displaySubMenu(currentSubMenu, temp ,etatCasier1 ,etatCasier2,etatWifi); // Passe la température réelle
     } else {
         currentSubMenu = -1;
         displayMainMenu();
