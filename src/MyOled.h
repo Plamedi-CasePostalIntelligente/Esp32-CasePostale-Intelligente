@@ -37,12 +37,13 @@ public:
     void printIt(int posx, int posy, const char *toDisplay, bool displayAfter = true, int makeDelaySecondes = 0);
     bool veilleCheck();
     void veilleDelay(int nbreSecondes);
+    bool isOperational(); // Nouvelle méthode pour vérifier l'état sans réinitialiser
 
     // Méthodes pour la gestion des menus avec 2 boutons
     void displayMainMenu();
-    void displaySubMenu(int subMenuIndex, float temperature ,const char *etatCasier1,const char *etatCasier2,const char *etatWifi);
+    void displaySubMenu(int subMenuIndex, float temperature, const char *etatCasier1, const char *etatCasier2, const char *etatWifi);
     void moveLeftButton();
-    void moveRightButton(float temp ,const char *etatCasier1,const char *etatCasier2,const char *etatWifi);
+    void moveRightButton(float temp, const char *etatCasier1, const char *etatCasier2, const char *etatWifi);
     int getCurrentMenuIndex();
     int getCurrentSubMenu();
 

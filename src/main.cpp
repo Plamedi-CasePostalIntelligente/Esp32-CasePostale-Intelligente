@@ -13,10 +13,28 @@
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET 4
-#define BTN_RIGHT 4  // Bouton droit
+#define BTN_RIGHT 4 // Bouton droit
 #define BTN_LEFT 16
 int RELAY_PIN_SOLENOIDE1 = 26; // GPIO26
 int RELAY_PIN_SOLENOIDE2 = 27; // GPIO27
+
+// === AJOUTS POUR LES TESTS ULTRASONIQUES ===
+// Topics MQTT
+const char *ULTRASONIC_LATENCY_TOPIC = "casier1/ultrasonic/test/latency";
+const char *ULTRASONIC_REPEATABILITY_TOPIC = "casier1/ultrasonic/test/repeatability";
+
+// Variables pour les tests
+unsigned long lastTestTime = 0;
+const unsigned long TEST_INTERVAL = 10000; // Test toutes les 10 secondes
+float previousDistance = 0;
+unsigned long changeStartTime = 0;
+bool measuringLatency = false;
+
+// Buffer circulaire pour la répétabilité
+const int BUFFER_SIZE = 10;
+float distanceBuffer[BUFFER_SIZE];
+int bufferIndex = 0;
+bool bufferFull = false;
 
 MyWifi *mywifi;
 MyAPI *myapi;
@@ -37,10 +55,10 @@ const char *etatCasier1;
 const char *etatCasier2;
 const char *etatWifi;
 String nombreRfid = "";
-unsigned long solenoidOpenTime = 0; // Temps d'ouverture des solénoïdes
+unsigned long solenoidOpenTime = 0;          // Temps d'ouverture des solénoïdes
 const unsigned long SOLENOID_TIMEOUT = 5000; // 5 secondes avant fermeture
-unsigned long lastComponentCheck = 0; // Dernière vérification des composants
-const unsigned long CHECK_INTERVAL = 20000; // Vérifier toutes les 10 secondes
+unsigned long lastComponentCheck = 0;        // Dernière vérification des composants
+const unsigned long CHECK_INTERVAL = 20000;  // Vérifier toutes les 10 secondes
 
 // Fonction pour vérifier périodiquement l'état des composants
 void checkComponents() {
@@ -52,9 +70,9 @@ void checkComponents() {
     }
 
     // Vérifier MyOled
-    if (myOled && !myOled->init(2)) {
+    if (myOled && !myOled->isOperational()) {
         mymqttmanager->publishOledStatus("Erreur: Écran OLED non détecté");
-    } else if (myOled && myOled->init(2)) {
+    } else if (myOled && myOled->isOperational()) {
         mymqttmanager->publishOledStatus("Écran OLED opérationnel");
     }
 
@@ -73,8 +91,68 @@ void checkComponents() {
     }
 }
 
-void setup()
-{
+// Fonction pour configurer les tests ultrasoniques
+void setupUltrasonicTests() {
+    if (myUltrasonique) {
+        previousDistance = myUltrasonique->GetDistance();
+    }
+}
+
+// Fonction pour exécuter les tests ultrasoniques
+void runUltrasonicTests() {
+    if (!myUltrasonique || !mymqttmanager || millis() - lastTestTime < TEST_INTERVAL) {
+        return;
+    }
+
+    lastTestTime = millis();
+    float currentDistance = myUltrasonique->GetDistance();
+
+    // Stocker la mesure dans le buffer
+    distanceBuffer[bufferIndex] = currentDistance;
+    bufferIndex = (bufferIndex + 1) % BUFFER_SIZE;
+    if (bufferIndex == 0)
+        bufferFull = true;
+
+    // Test de répétabilité
+    if (bufferFull) {
+        float sum = 0, sumDiff = 0;
+        for (int i = 0; i < BUFFER_SIZE; i++) {
+            sum += distanceBuffer[i];
+        }
+        float avg = sum / BUFFER_SIZE;
+
+        for (int i = 0; i < BUFFER_SIZE; i++) {
+            sumDiff += pow(distanceBuffer[i] - avg, 2);
+        }
+        float stdDev = sqrt(sumDiff / BUFFER_SIZE);
+
+        String message = "{\"avg\":" + String(avg, 2) +
+                         ",\"std_dev\":" + String(stdDev, 2) +
+                         ",\"cv\":" + String((stdDev / avg) * 100, 2) + "}";
+        mymqttmanager->client.publish(ULTRASONIC_REPEATABILITY_TOPIC, message.c_str());
+        Serial.println("Test répétabilité: " + message);
+    }
+
+    // Test de latence
+    if (!measuringLatency && abs(currentDistance - previousDistance) > 5.0) {
+        // Changement significatif détecté, démarrer mesure de latence
+        measuringLatency = true;
+        changeStartTime = millis();
+        Serial.println("Changement détecté, début mesure latence");
+    } else if (measuringLatency && abs(currentDistance - myUltrasonique->GetDistance()) < 0.5) {
+        // Mesure stabilisée
+        unsigned long latency = millis() - changeStartTime;
+        String message = "{\"latency_ms\":" + String(latency) +
+                         ",\"distance_change\":" + String(abs(currentDistance - previousDistance), 2) + "}";
+        mymqttmanager->client.publish(ULTRASONIC_LATENCY_TOPIC, message.c_str());
+        Serial.println("Test latence: " + message);
+        measuringLatency = false;
+    }
+
+    previousDistance = currentDistance;
+}
+
+void setup() {
     Serial.begin(9600);
 
     // Instanciation des objets
@@ -83,9 +161,23 @@ void setup()
         Serial.println("Erreur d'instanciation de la classe MyWifi");
     }
 
+    if (!mywifi->connect()) {
+        Serial.println("Erreur de connexion WiFi");
+        etatWifi = "Erreur WiFi";
+    } else {
+        etatWifi = "WiFi OK";
+        Serial.println("Connexion WiFi établie!");
+        Serial.print("Adresse IP: ");
+        Serial.println(mywifi->getLocalIP());
+    }
+
     myapi = new MyAPI();
     if (!myapi) {
         Serial.println("Erreur d'instanciation de la classe MyAPI");
+    }
+
+    if (!myapi->getBrokerInfo()) {
+        Serial.println("Erreur de récupération des informations du broker");
     }
 
     mymqttmanager = new MyMQTTManager();
@@ -93,6 +185,7 @@ void setup()
         Serial.println("Erreur d'instanciation de la classe MyMQTTManager");
     }
 
+    mymqttmanager->init();
     if (!mymqttmanager->init()) {
         Serial.println("Erreur d'initialisation du client MQTT");
     } else {
@@ -129,6 +222,17 @@ void setup()
         }
     }
 
+    // Initialisation des composants
+    if (mytemp && !mytemp->init()) {
+        Serial.println("Erreur d'initialisation de la classe MyTemp");
+        if (mymqttmanager && mymqttmanager->init()) {
+            mymqttmanager->publishTempStatus("Erreur d'initialisation de MyTemp");
+        }
+    }
+    if (mytemp) {
+        mytemp->setUniteUsed(MyTemp::UNITY_CELSIUS);
+    }
+
     myOled = new MyOled(&Wire, OLED_RESET, SCREEN_HEIGHT, SCREEN_WIDTH);
     if (!myOled) {
         Serial.println("Erreur d'instanciation de la classe MyOled");
@@ -144,37 +248,12 @@ void setup()
         while (1);
     }
 
-    // Initialisation des composants
-    if (mytemp && !mytemp->init()) {
-        Serial.println("Erreur d'initialisation de la classe MyTemp");
-        if (mymqttmanager && mymqttmanager->init()) {
-            mymqttmanager->publishTempStatus("Erreur d'initialisation de MyTemp");
-        }
-    }
-    if (mytemp) {
-        mytemp->setUniteUsed(MyTemp::UNITY_CELSIUS);
-    }
-
     if (myOled && myOled->init(2) != 0) {
         Serial.println("Erreur d'initialisation de la classe MyOled");
         if (mymqttmanager && mymqttmanager->init()) {
             mymqttmanager->publishOledStatus("Erreur d'initialisation de MyOled");
         }
         while (1);
-    }
-
-    if (!mywifi->connect()) {
-        Serial.println("Erreur de connexion WiFi");
-        etatWifi = "Erreur WiFi";
-    } else {
-        etatWifi = "WiFi OK";
-        Serial.println("Connexion WiFi établie!");
-        Serial.print("Adresse IP: ");
-        Serial.println(mywifi->getLocalIP());
-    }
-
-    if (!myapi->getBrokerInfo()) {
-        Serial.println("Erreur de récupération des informations du broker");
     }
 
     if (myUltrasonique && !myUltrasonique->FindEmptyBoxDistance()) {
@@ -201,14 +280,17 @@ void setup()
     }
 
     // Fermer les solénoïdes au démarrage
-    if (mySolenoide1) mySolenoide1->closeCase();
-    if (mySolenoide2) mySolenoide2->closeCase();
+    if (mySolenoide1)
+        mySolenoide1->closeCase();
+    if (mySolenoide2)
+        mySolenoide2->closeCase();
+
+    // Initialiser les tests ultrasoniques
+    setupUltrasonicTests();
 }
 
-void loop()
-{
+void loop() {
     mywifi->checkResetButton();
-
     // Vérification périodique des composants
     if (millis() - lastComponentCheck >= CHECK_INTERVAL) {
         checkComponents();
@@ -228,13 +310,15 @@ void loop()
 
     if (buttonleftState == 1) {
         Serial.println("Bouton gauche pressé");
-        if (myOled) myOled->moveLeftButton();
+        if (myOled)
+            myOled->moveLeftButton();
         delay(100);
     }
 
     if (buttonrightState == 1) {
         Serial.println("Bouton droit pressé");
-        if (myOled) myOled->moveRightButton(temperature, etatCasier1, etatCasier2, etatWifi);
+        if (myOled)
+            myOled->moveRightButton(temperature, etatCasier1, etatCasier2, etatWifi);
         delay(100);
     }
 
@@ -259,22 +343,32 @@ void loop()
     // Gestion RFID et Solénoïdes
     if (nombreRfid == "5A79FC03" && boxEmpty && solenoidOpenTime == 0) {
         Serial.println("Puce RFID valide détectée et boîte vide : ouverture des solénoïdes");
-        if (mySolenoide1) mySolenoide1->openCase();
-        if (mySolenoide2) mySolenoide2->openCase();
+        if (mySolenoide1)
+            mySolenoide1->openCase();
+        if (mySolenoide2)
+            mySolenoide2->openCase();
         solenoidOpenTime = millis(); // Enregistrer le moment de l'ouverture
-        nombreRfid = ""; // Réinitialise immédiatement
-        if (myRFID) myRFID->Reset(); // Réinitialise le module RFID
+        nombreRfid = "";             // Réinitialise immédiatement
+        if (myRFID)
+            myRFID->Reset(); // Réinitialise le module RFID
     }
 
     // Fermeture automatique après 5 secondes
     if (solenoidOpenTime > 0 && (millis() - solenoidOpenTime >= SOLENOID_TIMEOUT)) {
         Serial.println("Délai de 5 secondes écoulé : fermeture des solénoïdes");
-        if (mySolenoide1) mySolenoide1->closeCase();
-        if (mySolenoide2) mySolenoide2->closeCase();
+        if (mySolenoide1)
+            mySolenoide1->closeCase();
+        if (mySolenoide2)
+            mySolenoide2->closeCase();
         solenoidOpenTime = 0; // Réinitialiser
-        if (myRFID) myRFID->Reset(); // Réinitialise à nouveau
+        if (myRFID)
+            myRFID->Reset(); // Réinitialise à nouveau
     }
 
-    if (mymqttmanager) mymqttmanager->clientLoop();
+    // Exécuter les tests ultrasoniques
+    runUltrasonicTests();
+
+    if (mymqttmanager)
+        mymqttmanager->clientLoop();
     delay(500); // Réactivité accrue
 }

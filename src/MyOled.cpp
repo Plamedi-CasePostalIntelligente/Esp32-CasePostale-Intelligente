@@ -24,6 +24,14 @@ void MyOled::vATaskSecondCount(void *pvParameters) {
     vTaskDelete(NULL);
 }
 
+// Vérifie si l'OLED est opérationnel sans réinitialiser son état
+bool MyOled::isOperational() {
+    // Vérifier si l'OLED répond en envoyant une commande I2C simple
+    Wire.beginTransmission(0x3C); // Adresse I2C par défaut pour SSD1306
+    int error = Wire.endTransmission();
+    return (error == 0); // Retourne true si l'OLED répond
+}
+
 // Initialisation
 int MyOled::init(int displaySplashTime, uint8_t addrI2C) {
     // Configurer les broches SDA et SCL personnalisées
@@ -92,7 +100,7 @@ void MyOled::displayMainMenu() {
 }
 
 // Affichage des sous-menus
-void MyOled::displaySubMenu(int subMenuIndex, float temperature ,const char *etatCasier1,const char *etatCasier2, const char *etatWifi) {
+void MyOled::displaySubMenu(int subMenuIndex, float temperature, const char *etatCasier1, const char *etatCasier2, const char *etatWifi) {
     clearDisplay();
     setTextSize(1);
     setTextColor(SSD1306_WHITE);
@@ -102,11 +110,12 @@ void MyOled::displaySubMenu(int subMenuIndex, float temperature ,const char *eta
         case 0: // État C1
             printIt(10, 18, "Casier 1", false);
             printIt(10, 28, "Etat: ", true);
-            printIt(10, 38, etatCasier1 , true);
+            printIt(10, 38, etatCasier1, true);
             break;
         case 1: // État C2
             printIt(10, 18, "Casier 2", false);
             printIt(10, 28, "Etat: ", true);
+            printIt(10, 38, etatCasier2, true);
             break;
         case 2: // Température
             printIt(10, 18, "Temperature", false);
@@ -134,10 +143,10 @@ void MyOled::moveLeftButton() {
 }
 
 // Bouton droit : Entrée ou sortie du sous-menu
-void MyOled::moveRightButton(float temp ,const char *etatCasier1,const char *etatCasier2,const char *etatWifi) {
+void MyOled::moveRightButton(float temp, const char *etatCasier1, const char *etatCasier2, const char *etatWifi) {
     if (currentSubMenu == -1) {
         currentSubMenu = currentMenuIndex;
-        displaySubMenu(currentSubMenu, temp ,etatCasier1 ,etatCasier2,etatWifi); // Passe la température réelle
+        displaySubMenu(currentSubMenu, temp, etatCasier1, etatCasier2, etatWifi); // Passe la température réelle
     } else {
         currentSubMenu = -1;
         displayMainMenu();

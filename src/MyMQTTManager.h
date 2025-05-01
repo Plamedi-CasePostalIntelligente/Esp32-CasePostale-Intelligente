@@ -53,6 +53,7 @@ public:
     static void mqttCallbackHandler(char *topic, byte *payload, unsigned int length);
     static MyMQTTManager* instance;
     String floatToString(float value, int precision = 1);
+    PubSubClient client;
 
 private:
     // Ces variables stockeront les informations de l'API
@@ -75,7 +76,6 @@ private:
 
 
     WiFiClient espClient;
-    PubSubClient client;
     MyAPI api;
     Preferences preferences;
     String messageFirstTopic;
