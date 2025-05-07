@@ -15,10 +15,9 @@
 #define OLED_RESET 4
 #define BTN_RIGHT 4 // Bouton droit
 #define BTN_LEFT 16
-int RELAY_PIN_SOLENOIDE1 = 26; // GPIO26
-int RELAY_PIN_SOLENOIDE2 = 27; // GPIO27
+int RELAY_PIN_SOLENOIDE1 = 26; // GPIO26 pour Casier 1
+int RELAY_PIN_SOLENOIDE2 = 27; // GPIO27 pour Casier 2
 
-// === AJOUTS POUR LES TESTS ULTRASONIQUES ===
 // Topics MQTT
 const char *ULTRASONIC_LATENCY_TOPIC = "casier1/ultrasonic/test/latency";
 const char *ULTRASONIC_REPEATABILITY_TOPIC = "casier1/ultrasonic/test/repeatability";
@@ -26,20 +25,22 @@ const char *ULTRASONIC_REPEATABILITY_TOPIC = "casier1/ultrasonic/test/repeatabil
 // Variables pour les tests
 unsigned long lastTestTime = 0;
 const unsigned long TEST_INTERVAL = 10000; // Test toutes les 10 secondes
-float previousDistance = 0;
-unsigned long changeStartTime = 0;
-bool measuringLatency = false;
+float previousDistance1 = 0, previousDistance2 = 0;
+unsigned long changeStartTime1 = 0, changeStartTime2 = 0;
+bool measuringLatency1 = false, measuringLatency2 = false;
 
 // Buffer circulaire pour la répétabilité
 const int BUFFER_SIZE = 10;
-float distanceBuffer[BUFFER_SIZE];
-int bufferIndex = 0;
-bool bufferFull = false;
+float distanceBuffer1[BUFFER_SIZE];
+float distanceBuffer2[BUFFER_SIZE];
+int bufferIndex1 = 0, bufferIndex2 = 0;
+bool bufferFull1 = false, bufferFull2 = false;
 
 MyWifi *mywifi;
 MyAPI *myapi;
 MyMQTTManager *mymqttmanager;
-MyUltrasonique *myUltrasonique;
+MyUltrasonique *myUltrasonique1; // Casier 1
+MyUltrasonique *myUltrasonique2; // Casier 2
 MyRFID *myRFID;
 MySolenoide *mySolenoide1 = NULL;
 MySolenoide *mySolenoide2 = NULL;
@@ -51,116 +52,237 @@ MyButton *myButtonRIGHT = NULL;
 int buttonleftState;
 int buttonrightState;
 float temperature;
-const char *etatCasier1;
-const char *etatCasier2;
+const char *etatCasier1 = "Inconnu";
+const char *etatCasier2 = "Inconnu";
 const char *etatWifi;
-String nombreRfid = "";
-unsigned long solenoidOpenTime = 0;          // Temps d'ouverture des solénoïdes
-const unsigned long SOLENOID_TIMEOUT = 5000; // 5 secondes avant fermeture
-unsigned long lastComponentCheck = 0;        // Dernière vérification des composants
-const unsigned long CHECK_INTERVAL = 20000;  // Vérifier toutes les 10 secondes
+String currentUid = "";
+unsigned long solenoidOpenTime = 0;
+const unsigned long SOLENOID_TIMEOUT = 5000; // 5 secondes
+unsigned long lastComponentCheck = 0;
+const unsigned long CHECK_INTERVAL = 20000; // Vérifier toutes les 20 secondes
+unsigned long lastReconnectAttempt = 0;
+const unsigned long RECONNECT_INTERVAL = 5000; // Reconnexion toutes les 5 secondes
 
-// Fonction pour vérifier périodiquement l'état des composants
+// Variables pour suivre les états précédents
+bool prevBoxEmpty1 = true;
+bool prevBoxEmpty2 = true;
+
+// void setupUltrasonicTests() {
+//     for (int i = 0; i < BUFFER_SIZE; i++) {
+//         distanceBuffer1[i] = 0;
+//         distanceBuffer2[i] = 0;
+//     }
+// }
+
+// void runUltrasonicTests() {
+//     if (millis() - lastTestTime < TEST_INTERVAL) {
+//         return;
+//     }
+
+//     float currentDistance1 = myUltrasonique1->GetDistance();
+//     float currentDistance2 = myUltrasonique2->GetDistance();
+
+//     // Test de latence pour Casier 1
+//     if (abs(currentDistance1 - previousDistance1) > 1.0 && !measuringLatency1) {
+//         changeStartTime1 = millis();
+//         measuringLatency1 = true;
+//     } else if (measuringLatency1 && abs(currentDistance1 - previousDistance1) < 0.5) {
+//         unsigned long latency = millis() - changeStartTime1;
+//         mymqttmanager->publish(ULTRASONIC_LATENCY_TOPIC, String(latency).c_str());
+//         measuringLatency1 = false;
+//     }
+
+//     // Test de latence pour Casier 2
+//     if (abs(currentDistance2 - previousDistance2) > 1.0 && !measuringLatency2) {
+//         changeStartTime2 = millis();
+//         measuringLatency2 = true;
+//     } else if (measuringLatency2 && abs(currentDistance2 - previousDistance2) < 0.5) {
+//         unsigned long latency = millis() - changeStartTime2;
+//         mymqttmanager->publish(ULTRASONIC_LATENCY_TOPIC, String(latency).c_str());
+//         measuringLatency2 = false;
+//     }
+
+//     // Test de répétabilité pour Casier 1
+//     distanceBuffer1[bufferIndex1] = currentDistance1;
+//     bufferIndex1 = (bufferIndex1 + 1) % BUFFER_SIZE;
+//     if (bufferIndex1 == 0) bufferFull1 = true;
+
+//     if (bufferFull1) {
+//         float sum = 0;
+//         for (int i = 0; i < BUFFER_SIZE; i++) {
+//             sum += distanceBuffer1[i];
+//         }
+//         float mean = sum / BUFFER_SIZE;
+//         float variance = 0;
+//         for (int i = 0; i < BUFFER_SIZE; i++) {
+//             variance += pow(distanceBuffer1[i] - mean, 2);
+//         }
+//         variance /= BUFFER_SIZE;
+//         mymqttmanager->publish(ULTRASONIC_REPEATABILITY_TOPIC, String(variance).c_str());
+//     }
+
+//     // Test de répétabilité pour Casier 2
+//     distanceBuffer2[bufferIndex2] = currentDistance2;
+//     bufferIndex2 = (bufferIndex2 + 1) % BUFFER_SIZE;
+//     if (bufferIndex2 == 0) bufferFull2 = true;
+
+//     if (bufferFull2) {
+//         float sum = 0;
+//         for (int i = 0; i < BUFFER_SIZE; i++) {
+//             sum += distanceBuffer2[i];
+//         }
+//         float mean = sum / BUFFER_SIZE;
+//         float variance = 0;
+//         for (int i = 0; i < BUFFER_SIZE; i++) {
+//             variance += pow(distanceBuffer2[i] - mean, 2);
+//         }
+//         variance /= BUFFER_SIZE;
+//         mymqttmanager->publish(ULTRASONIC_REPEATABILITY_TOPIC, String(variance).c_str());
+//     }
+
+//     previousDistance1 = currentDistance1;
+//     previousDistance2 = currentDistance2;
+//     lastTestTime = millis();
+// }
+
 void checkComponents() {
-    // Vérifier MyTemp
     if (mytemp && !mytemp->init()) {
         mymqttmanager->publishTempStatus("Erreur: Capteur de température non détecté");
     } else if (mytemp && mytemp->init()) {
         mymqttmanager->publishTempStatus("Capteur de température opérationnel");
     }
 
-    // Vérifier MyOled
     if (myOled && !myOled->isOperational()) {
         mymqttmanager->publishOledStatus("Erreur: Écran OLED non détecté");
     } else if (myOled && myOled->isOperational()) {
         mymqttmanager->publishOledStatus("Écran OLED opérationnel");
     }
 
-    // Vérifier MyRFID
     if (myRFID && !myRFID->IsRFIDDetected()) {
         mymqttmanager->publishRfidStatus("Erreur: Module RFID non détecté");
     } else if (myRFID && myRFID->IsRFIDDetected()) {
         mymqttmanager->publishRfidStatus("Module RFID opérationnel");
     }
 
-    // Vérifier MyUltrasonique
-    if (myUltrasonique && !myUltrasonique->FindEmptyBoxDistance()) {
-        mymqttmanager->publishUltrasonicStatus("Erreur: Capteur ultrasonique non détecté");
-    } else if (myUltrasonique && myUltrasonique->FindEmptyBoxDistance()) {
-        mymqttmanager->publishUltrasonicStatus("Capteur ultrasonique opérationnel");
+    if (myUltrasonique1 && !myUltrasonique1->IsSensorResponsive()) {
+        mymqttmanager->publishUltrasonicStatus("Erreur: Capteur ultrasonique 1 non détecté");
+    } else if (myUltrasonique1 && myUltrasonique1->IsSensorResponsive()) {
+        mymqttmanager->publishUltrasonicStatus("Capteur ultrasonique 1 opérationnel");
+    }
+
+    if (myUltrasonique2 && !myUltrasonique2->IsSensorResponsive()) {
+        mymqttmanager->publishUltrasonicStatus("Erreur: Capteur ultrasonique 2 non détecté");
+    } else if (myUltrasonique2 && myUltrasonique2->IsSensorResponsive()) {
+        mymqttmanager->publishUltrasonicStatus("Capteur ultrasonique 2 opérationnel");
     }
 }
 
-// Fonction pour configurer les tests ultrasoniques
-void setupUltrasonicTests() {
-    if (myUltrasonique) {
-        previousDistance = myUltrasonique->GetDistance();
+void handleRFIDLogic(String uid) {
+    if (!myapi->checkUserExists(uid)) {
+        Serial.println("Utilisateur non existant, enregistrement de la tentative...");
+        myapi->insertAccessTries(uid, false);
+        return;
+    } else {
+        myapi->insertAccessTries(uid, true);
     }
-}
 
-// Fonction pour exécuter les tests ultrasoniques
-void runUltrasonicTests() {
-    if (!myUltrasonique || !mymqttmanager || millis() - lastTestTime < TEST_INTERVAL) {
+    if (!myapi->verifyIfFactor(uid)) {
+        Serial.println("Erreur lors de la vérification du type d'utilisateur");
+        return;
+    }
+    bool isFacteur = myapi->getIsFacteur();
+    Serial.println("Utilisateur est " + String(isFacteur ? "facteur" : "client"));
+
+    if (!myapi->verifyIfHasDelivery(uid)) {
+        Serial.println("Aucune commande associée, arrêt");
         return;
     }
 
-    lastTestTime = millis();
-    float currentDistance = myUltrasonique->GetDistance();
-
-    // Stocker la mesure dans le buffer
-    distanceBuffer[bufferIndex] = currentDistance;
-    bufferIndex = (bufferIndex + 1) % BUFFER_SIZE;
-    if (bufferIndex == 0)
-        bufferFull = true;
-
-    // Test de répétabilité
-    if (bufferFull) {
-        float sum = 0, sumDiff = 0;
-        for (int i = 0; i < BUFFER_SIZE; i++) {
-            sum += distanceBuffer[i];
-        }
-        float avg = sum / BUFFER_SIZE;
-
-        for (int i = 0; i < BUFFER_SIZE; i++) {
-            sumDiff += pow(distanceBuffer[i] - avg, 2);
-        }
-        float stdDev = sqrt(sumDiff / BUFFER_SIZE);
-
-        String message = "{\"avg\":" + String(avg, 2) +
-                         ",\"std_dev\":" + String(stdDev, 2) +
-                         ",\"cv\":" + String((stdDev / avg) * 100, 2) + "}";
-        mymqttmanager->client.publish(ULTRASONIC_REPEATABILITY_TOPIC, message.c_str());
-        Serial.println("Test répétabilité: " + message);
+    if (!myapi->isDelivered(uid)) {
+        Serial.println("Erreur lors de la vérification de la livraison");
+        return;
+    }
+    bool isDelivered = myapi->getIsDelivered();
+    if (isDelivered) {
+        Serial.println("Commande déjà livrée, arrêt");
+        return;
     }
 
-    // Test de latence
-    if (!measuringLatency && abs(currentDistance - previousDistance) > 5.0) {
-        // Changement significatif détecté, démarrer mesure de latence
-        measuringLatency = true;
-        changeStartTime = millis();
-        Serial.println("Changement détecté, début mesure latence");
-    } else if (measuringLatency && abs(currentDistance - myUltrasonique->GetDistance()) < 0.5) {
-        // Mesure stabilisée
-        unsigned long latency = millis() - changeStartTime;
-        String message = "{\"latency_ms\":" + String(latency) +
-                         ",\"distance_change\":" + String(abs(currentDistance - previousDistance), 2) + "}";
-        mymqttmanager->client.publish(ULTRASONIC_LATENCY_TOPIC, message.c_str());
-        Serial.println("Test latence: " + message);
-        measuringLatency = false;
+    bool boxEmpty1 = myUltrasonique1->IsBoxEmpty();
+    bool boxEmpty2 = myUltrasonique2->IsBoxEmpty();
+    etatCasier1 = boxEmpty1 ? "Vide" : "Pleine";
+    etatCasier2 = boxEmpty2 ? "Vide" : "Pleine";
+
+    if (boxEmpty1 != prevBoxEmpty1) {
+        myapi->updateCaseState(uid);
+        prevBoxEmpty1 = boxEmpty1;
+    }
+    if (boxEmpty2 != prevBoxEmpty2) {
+        myapi->updateCaseState(uid);
+        prevBoxEmpty2 = boxEmpty2;
     }
 
-    previousDistance = currentDistance;
+    if (myapi->openCase(uid)) {
+        String caseNumbers = myapi->getCaseNumbers();
+        Serial.println("Numéros de casier retournés : " + caseNumbers);
+
+        int caseCount = 1;
+        for (size_t i = 0; i < caseNumbers.length(); i++) {
+            if (caseNumbers[i] == ',') caseCount++;
+        }
+
+        if (isFacteur && caseCount > 1) {
+            if (boxEmpty1) {
+                Serial.println("Facteur : Ouvre CAS-001 car boxEmpty1 est vrai");
+                if (mySolenoide1 && boxEmpty1) {
+                    mySolenoide1->openCase();
+                    solenoidOpenTime = millis();
+                }
+            } else {
+                Serial.println("Facteur : Ouvre CAS-002 car boxEmpty1 est faux");
+                if (mySolenoide2 && boxEmpty2) {
+                    mySolenoide2->openCase();
+                    solenoidOpenTime = millis();
+                }
+            }
+        } else {
+            String caseList = caseNumbers + ",";
+            int start = 0;
+            for (int i = 0; i < caseCount; i++) {
+                int comma = caseList.indexOf(',', start);
+                String caseNumber = caseList.substring(start, comma);
+                start = comma + 1;
+
+                if (caseNumber == "CAS-001") {
+                    if (!boxEmpty1) {
+                        Serial.println("Client : Ouvre CAS-001");
+                        if (mySolenoide1) {
+                            mySolenoide1->openCase();
+                            solenoidOpenTime = millis();
+                           // myapi->updateDeliveryState(uid);
+                        }
+                        break;
+                    }
+                } else if (caseNumber == "CAS-002") {
+                    if (!boxEmpty2) {
+                        Serial.println("Client : Ouvre CAS-002");
+                        if (mySolenoide2) {
+                            mySolenoide2->openCase();
+                            solenoidOpenTime = millis();
+                           // myapi->updateDeliveryState(uid);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
 }
 
 void setup() {
     Serial.begin(9600);
 
-    // Instanciation des objets
     mywifi = new MyWifi();
-    if (!mywifi) {
-        Serial.println("Erreur d'instanciation de la classe MyWifi");
-    }
-
     if (!mywifi->connect()) {
         Serial.println("Erreur de connexion WiFi");
         etatWifi = "Erreur WiFi";
@@ -172,153 +294,86 @@ void setup() {
     }
 
     myapi = new MyAPI();
-    if (!myapi) {
-        Serial.println("Erreur d'instanciation de la classe MyAPI");
-    }
-
-    if (!myapi->getBrokerInfo()) {
-        Serial.println("Erreur de récupération des informations du broker");
-    }
-
     mymqttmanager = new MyMQTTManager();
-    if (!mymqttmanager) {
-        Serial.println("Erreur d'instanciation de la classe MyMQTTManager");
-    }
-
-    mymqttmanager->init();
     if (!mymqttmanager->init()) {
-        Serial.println("Erreur d'initialisation du client MQTT");
+        Serial.println("Erreur d'initialisation MQTT");
     } else {
         mymqttmanager->connect();
     }
 
-    myUltrasonique = new MyUltrasonique();
-    if (!myUltrasonique) {
-        Serial.println("Erreur d'instanciation de la classe MyUltrasonique");
-        if (mymqttmanager && mymqttmanager->init()) {
-            mymqttmanager->publishUltrasonicStatus("Erreur d'instanciation de MyUltrasonique");
-        }
+    myUltrasonique1 = new MyUltrasonique(32, 33); // Casier 1 : trig_Pin=32, echo_Pin=33
+    myUltrasonique2 = new MyUltrasonique(2, 15); // Casier 2 : trig_Pin=25, echo_Pin=26
+    if (!myUltrasonique1->FindEmptyBoxDistance()) {
+        Serial.println("Erreur de calibration du capteur ultrasonique 1");
+    } else {
+        Serial.println("Calibration du capteur ultrasonique 1 terminée avec succès");
+    }
+    if (!myUltrasonique2->FindEmptyBoxDistance()) {
+        Serial.println("Erreur de calibration du capteur ultrasonique 2 (peut-être non branché)");
+    } else {
+        Serial.println("Calibration du capteur ultrasonique 2 terminée avec succès");
     }
 
     myRFID = new MyRFID();
-    if (!myRFID) {
-        Serial.println("Erreur d'instanciation de la classe MyRFID");
-        if (mymqttmanager && mymqttmanager->init()) {
-            mymqttmanager->publishRfidStatus("Erreur d'instanciation de MyRFID");
-        }
+    if (!myRFID->IsRFIDDetected()) {
+        Serial.println("Erreur de détection du module RFID");
     }
 
     myButtonLEFT = new MyButton(BTN_LEFT);
     myButtonRIGHT = new MyButton(BTN_RIGHT);
-    if (!myButtonLEFT || !myButtonRIGHT) {
-        Serial.println("Erreur d'instanciation de la classe MyButton");
-    }
 
     mytemp = new MyTemp();
-    if (!mytemp) {
-        Serial.println("Erreur d'instanciation de la classe MyTemp");
-        if (mymqttmanager && mymqttmanager->init()) {
-            mymqttmanager->publishTempStatus("Erreur d'instanciation de MyTemp");
-        }
+    if (!mytemp->init()) {
+        Serial.println("Erreur d'initialisation de MyTemp");
     }
-
-    // Initialisation des composants
-    if (mytemp && !mytemp->init()) {
-        Serial.println("Erreur d'initialisation de la classe MyTemp");
-        if (mymqttmanager && mymqttmanager->init()) {
-            mymqttmanager->publishTempStatus("Erreur d'initialisation de MyTemp");
-        }
-    }
-    if (mytemp) {
-        mytemp->setUniteUsed(MyTemp::UNITY_CELSIUS);
-    }
+    mytemp->setUniteUsed(MyTemp::UNITY_CELSIUS);
 
     myOled = new MyOled(&Wire, OLED_RESET, SCREEN_HEIGHT, SCREEN_WIDTH);
-    if (!myOled) {
-        Serial.println("Erreur d'instanciation de la classe MyOled");
-        if (mymqttmanager && mymqttmanager->init()) {
-            mymqttmanager->publishOledStatus("Erreur d'instanciation de MyOled");
-        }
+    if (myOled->init(2) != 0) {
+        Serial.println("Erreur d'initialisation de MyOled");
+        while (1);
     }
 
     mySolenoide1 = new MySolenoide(RELAY_PIN_SOLENOIDE1);
     mySolenoide2 = new MySolenoide(RELAY_PIN_SOLENOIDE2);
-    if (!mySolenoide1 || !mySolenoide2) {
-        Serial.println("Erreur d'instanciation de la classe MySolenoide");
+    if (!mySolenoide1->init() || !mySolenoide2->init()) {
+        Serial.println("Erreur d'initialisation des solénoïdes");
         while (1);
     }
+    mySolenoide1->closeCase();
+    mySolenoide2->closeCase();
 
-    if (myOled && myOled->init(2) != 0) {
-        Serial.println("Erreur d'initialisation de la classe MyOled");
-        if (mymqttmanager && mymqttmanager->init()) {
-            mymqttmanager->publishOledStatus("Erreur d'initialisation de MyOled");
-        }
-        while (1);
-    }
-
-    if (myUltrasonique && !myUltrasonique->FindEmptyBoxDistance()) {
-        Serial.println("Erreur de calibration de la boîte vide");
-        if (mymqttmanager && mymqttmanager->init()) {
-            mymqttmanager->publishUltrasonicStatus("Erreur de calibration de la boîte vide");
-        }
-        while (1);
-    }
-
-    if (myRFID && !myRFID->IsRFIDDetected()) {
-        Serial.println("Erreur de détection du module RFID");
-        if (mymqttmanager && mymqttmanager->init()) {
-            mymqttmanager->publishRfidStatus("Erreur de détection du module RFID");
-        }
-    }
-
-    if (mySolenoide1 && !mySolenoide1->init()) {
-        Serial.println("Erreur d'initialisation du solénoïde 1");
-    }
-
-    if (mySolenoide2 && !mySolenoide2->init()) {
-        Serial.println("Erreur d'initialisation du solénoïde 2");
-    }
-
-    // Fermer les solénoïdes au démarrage
-    if (mySolenoide1)
-        mySolenoide1->closeCase();
-    if (mySolenoide2)
-        mySolenoide2->closeCase();
-
-    // Initialiser les tests ultrasoniques
-    setupUltrasonicTests();
+    // setupUltrasonicTests();
 }
 
 void loop() {
     mywifi->checkResetButton();
-    // Vérification périodique des composants
+
     if (millis() - lastComponentCheck >= CHECK_INTERVAL) {
         checkComponents();
-        lastComponentCheck = millis(); // Mettre à jour le temps de la dernière vérification
+        lastComponentCheck = millis();
     }
 
-    // Lecture de la carte RFID
     String newCardRead = myRFID ? myRFID->ReadCardSerial() : "";
-    if (newCardRead != "") {
-        nombreRfid = newCardRead;
-        Serial.println("UID détecté: " + nombreRfid);
+    if (newCardRead != "" && newCardRead != currentUid) {
+        currentUid = newCardRead;
+        Serial.println("UID détecté: " + currentUid);
+        handleRFIDLogic(currentUid);
+        myRFID->Reset();
     }
 
     buttonleftState = myButtonLEFT ? myButtonLEFT->ButtonPressed() : 0;
     buttonrightState = myButtonRIGHT ? myButtonRIGHT->ButtonPressed() : 0;
     temperature = mytemp ? mytemp->getTemperature() : NAN;
+    Serial.println("Température: " + String(temperature) + " °C");
 
     if (buttonleftState == 1) {
-        Serial.println("Bouton gauche pressé");
-        if (myOled)
-            myOled->moveLeftButton();
+        if (myOled) myOled->moveLeftButton();
         delay(100);
     }
 
     if (buttonrightState == 1) {
-        Serial.println("Bouton droit pressé");
-        if (myOled)
-            myOled->moveRightButton(temperature, etatCasier1, etatCasier2, etatWifi);
+        if (myOled) myOled->moveRightButton(temperature, etatCasier1, etatCasier2, etatWifi);
         delay(100);
     }
 
@@ -330,45 +385,24 @@ void loop() {
         }
     }
 
-    // Gestion Ultrasonique (pour affichage uniquement)
-    bool boxEmpty = myUltrasonique ? myUltrasonique->IsBoxEmpty() : false;
-    if (boxEmpty) {
-        etatCasier1 = "Vide";
-        etatCasier2 = "Vide";
-    } else {
-        etatCasier1 = "Pleine";
-        etatCasier2 = "Pleine";
-    }
+    etatCasier1 = myUltrasonique1->IsBoxEmpty() ? "Vide" : "Pleine";
+    etatCasier2 = myUltrasonique2->IsBoxEmpty() ? "Vide" : "Pleine";
 
-    // Gestion RFID et Solénoïdes
-    if (nombreRfid == "5A79FC03" && boxEmpty && solenoidOpenTime == 0) {
-        Serial.println("Puce RFID valide détectée et boîte vide : ouverture des solénoïdes");
-        if (mySolenoide1)
-            mySolenoide1->openCase();
-        if (mySolenoide2)
-            mySolenoide2->openCase();
-        solenoidOpenTime = millis(); // Enregistrer le moment de l'ouverture
-        nombreRfid = "";             // Réinitialise immédiatement
-        if (myRFID)
-            myRFID->Reset(); // Réinitialise le module RFID
-    }
+    // runUltrasonicTests();
 
-    // Fermeture automatique après 5 secondes
     if (solenoidOpenTime > 0 && (millis() - solenoidOpenTime >= SOLENOID_TIMEOUT)) {
         Serial.println("Délai de 5 secondes écoulé : fermeture des solénoïdes");
-        if (mySolenoide1)
-            mySolenoide1->closeCase();
-        if (mySolenoide2)
-            mySolenoide2->closeCase();
-        solenoidOpenTime = 0; // Réinitialiser
-        if (myRFID)
-            myRFID->Reset(); // Réinitialise à nouveau
+        if (mySolenoide1) mySolenoide1->closeCase();
+        if (mySolenoide2) mySolenoide2->closeCase();
+        solenoidOpenTime = 0;
+        if (myRFID) myRFID->Reset();
     }
 
-    // Exécuter les tests ultrasoniques
-    runUltrasonicTests();
+    if (mywifi->isConnected() && !mymqttmanager->client.connected() && millis() - lastReconnectAttempt >= RECONNECT_INTERVAL) {
+        mymqttmanager->tryConnect();
+        lastReconnectAttempt = millis();
+    }
 
-    if (mymqttmanager)
-        mymqttmanager->clientLoop();
-    delay(500); // Réactivité accrue
+    if (mymqttmanager) mymqttmanager->clientLoop();
+    delay(500);
 }

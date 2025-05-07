@@ -12,19 +12,24 @@ MyAPI::MyAPI()
     _isFacteur = false;
     _userType = "";
     _hasFactorDelivery = "";
-    _idHasDelivery = "";
-    _idHasClient = "";
+    _idFactorHasDelivery = "";
+    _idClientHasDelivery = "";
     _isClientDelivered = "";
     _isDelivered = false;
     _isClientCaseFull = "";
     _isFull = false;
     _isCaseNumber = "";
-    _caseNumber = "";
+    _caseNumbers = ""; // Initialize as empty string
     _caseState = -1;
     _deliveryState = -1;
+    _insertSuccess = false;
 }
 
+#ifdef LOCAL_TESTING
+const char api_url[100] = "http://192.168.113.138:3003/";
+#else
 const char api_url[100] = "https://casepostaleapi.merdyspeed.ca/";
+#endif
 
 bool MyAPI::getBrokerInfo()
 {
@@ -32,7 +37,8 @@ bool MyAPI::getBrokerInfo()
 
     Serial.println("Récupération des informations du broker...");
 
-    http.begin("https://casepostaleapi.merdyspeed.ca/api/broker/infoBroker");
+    String url = String(api_url) + "api/broker/infoBroker";
+    http.begin(url);
     int httpCode = http.GET();
 
     if (httpCode == HTTP_CODE_OK)
@@ -76,7 +82,10 @@ bool MyAPI::checkUserExists(String uid)
 
     Serial.println("Vérification de l'existence de l'utilisateur avec UID: " + uid);
 
-    String url = String(api_url) + "api/getUserByUid/" + uid;
+    String url = String(api_url) + "api/users/getUserByUid/" + uid;
+    
+    Serial.println("URL utilisée: " + url);
+    
     http.begin(url);
     int httpCode = http.GET();
 
@@ -109,6 +118,7 @@ bool MyAPI::checkUserExists(String uid)
     }
 
     Serial.println("Erreur HTTP: " + String(httpCode));
+    Serial.println("URL utilisée: " + url);
     http.end();
     return false;
 }
@@ -119,7 +129,7 @@ bool MyAPI::verifyIfFactor(String uid)
 
     Serial.println("Vérification si l'utilisateur avec UID " + uid + " est un facteur...");
 
-    String url = String(api_url) + "verifyIfFactor/" + uid;
+    String url = String(api_url) + "api/lockers/verifyIfFactor/" + uid;
     http.begin(url);
     int httpCode = http.GET();
 
@@ -165,7 +175,7 @@ bool MyAPI::verifyIfHasDelivery(String uid)
 
     Serial.println("Vérification si l'utilisateur avec UID " + uid + " a une livraison...");
 
-    String url = String(api_url) + "verifyIfHasDelivery/" + uid;
+    String url = String(api_url) + "api/lockers/verifyIfHasDelivery/" + uid;
     http.begin(url);
     int httpCode = http.GET();
 
@@ -193,12 +203,12 @@ bool MyAPI::verifyIfHasDelivery(String uid)
         }
 
         _hasFactorDelivery = doc["hasFactorDelivery"].as<String>();
-        _idHasDelivery = doc["idHasDelivery"].as<String>();
-        _idHasClient = doc["idHasClient"].as<String>();
+        _idFactorHasDelivery = doc["idFactorHasDelivery"].as<String>();
+        _idClientHasDelivery = doc["idClientHasDelivery"].as<String>();
 
         Serial.println("hasFactorDelivery: " + _hasFactorDelivery);
-        Serial.println("idHasDelivery: " + _idHasDelivery);
-        Serial.println("idHasClient: " + _idHasClient);
+        Serial.println("idFactorHasDelivery: " + _idFactorHasDelivery);
+        Serial.println("idClientHasDelivery: " + _idClientHasDelivery);
         http.end();
         return true;
     }
@@ -214,7 +224,7 @@ bool MyAPI::isDelivered(String uid)
 
     Serial.println("Vérification si l'utilisateur avec UID " + uid + " a une livraison livrée...");
 
-    String url = String(api_url) + "isDelivered/" + uid;
+    String url = String(api_url) + "api/lockers/isDelivered/" + uid;
     http.begin(url);
     int httpCode = http.GET();
 
@@ -261,7 +271,7 @@ bool MyAPI::isCaseFilled(String uid)
 
     Serial.println("Vérification si le casier de l'utilisateur avec UID " + uid + " est plein...");
 
-    String url = String(api_url) + "isCaseFilled/" + uid;
+    String url = String(api_url) + "api/lockers/isCaseFilled/" + uid;
     http.begin(url);
     int httpCode = http.GET();
 
@@ -308,7 +318,7 @@ bool MyAPI::openCase(String uid)
 
     Serial.println("Récupération du numéro de casier pour l'utilisateur avec UID " + uid + "...");
 
-    String url = String(api_url) + "openCase/" + uid; // URL mise à jour
+    String url = String(api_url) + "api/lockers/openCase/" + uid;
     http.begin(url);
     int httpCode = http.GET();
 
@@ -336,10 +346,17 @@ bool MyAPI::openCase(String uid)
         }
 
         _isCaseNumber = doc["isCaseNumber"].as<String>();
-        _caseNumber = doc["caseNumber"].as<String>();
+        // Parse caseNumbers array and join into a comma-separated string
+        JsonArray caseNumbers = doc["caseNumbers"].as<JsonArray>();
+        _caseNumbers = "";
+        for (size_t i = 0; i < caseNumbers.size(); i++)
+        {
+            _caseNumbers += caseNumbers[i].as<String>();
+            if (i < caseNumbers.size() - 1) _caseNumbers += ",";
+        }
 
         Serial.println("isCaseNumber: " + _isCaseNumber);
-        Serial.println("caseNumber: " + _caseNumber);
+        Serial.println("caseNumbers: " + _caseNumbers);
         http.end();
         return true;
     }
@@ -353,19 +370,26 @@ bool MyAPI::updateCaseState(String uid)
 {
     HTTPClient http;
 
-    Serial.println("Mise à jour de l'état du casier pour l'utilisateur avec UID " + uid + "...");
+    Serial.println("Mise à jour de l'état du casier pour UID: " + uid + "...");
 
-    String url = String(api_url) + "updateCaseState/" + uid; // URL mise à jour
+    String url = String(api_url) + "api/lockers/updateCaseState";
     http.begin(url);
-    int httpCode = http.GET();
+    http.addHeader("Content-Type", "application/json");
+
+    StaticJsonDocument<200> doc;
+    doc["uid"] = uid;
+    String requestBody;
+    serializeJson(doc, requestBody);
+
+    int httpCode = http.POST(requestBody);
 
     if (httpCode == HTTP_CODE_OK)
     {
         String payload = http.getString();
         Serial.println("Réponse reçue: " + payload);
 
-        StaticJsonDocument<512> doc;
-        DeserializationError error = deserializeJson(doc, payload);
+        StaticJsonDocument<512> responseDoc;
+        DeserializationError error = deserializeJson(responseDoc, payload);
 
         if (error)
         {
@@ -375,15 +399,14 @@ bool MyAPI::updateCaseState(String uid)
             return false;
         }
 
-        if (doc.containsKey("message") && (doc["message"] == "Locker not found" || doc["message"] == "Aucune mise à jour effectuée"))
+        if (responseDoc.containsKey("message") && (responseDoc["message"] == "Locker not found" || responseDoc["message"] == "Aucune mise à jour effectuée"))
         {
-            Serial.println(doc["message"].as<String>());
+            Serial.println(responseDoc["message"].as<String>());
             http.end();
             return false;
         }
 
-        _caseState = doc["response"].as<int>();
-
+        _caseState = responseDoc["response"].as<int>();
         Serial.println("État du casier mis à jour: " + String(_caseState));
         http.end();
         return true;
@@ -398,19 +421,26 @@ bool MyAPI::updateDeliveryState(String uid)
 {
     HTTPClient http;
 
-    Serial.println("Mise à jour de l'état de la livraison pour l'utilisateur avec UID " + uid + "...");
+    Serial.println("Mise à jour de l'état de la livraison pour UID: " + uid + "...");
 
-    String url = String(api_url) + "updateDeliveryState/" + uid; // URL mise à jour
+    String url = String(api_url) + "api/lockers/updateDeliveryState";
     http.begin(url);
-    int httpCode = http.GET();
+    http.addHeader("Content-Type", "application/json");
+
+    StaticJsonDocument<200> doc;
+    doc["uid"] = uid;
+    String requestBody;
+    serializeJson(doc, requestBody);
+
+    int httpCode = http.POST(requestBody);
 
     if (httpCode == HTTP_CODE_OK)
     {
         String payload = http.getString();
         Serial.println("Réponse reçue: " + payload);
 
-        StaticJsonDocument<512> doc;
-        DeserializationError error = deserializeJson(doc, payload);
+        StaticJsonDocument<512> responseDoc;
+        DeserializationError error = deserializeJson(responseDoc, payload);
 
         if (error)
         {
@@ -420,15 +450,14 @@ bool MyAPI::updateDeliveryState(String uid)
             return false;
         }
 
-        if (doc.containsKey("message") && (doc["message"] == "Delivery not found" || doc["message"] == "Aucune mise à jour effectuée"))
+        if (responseDoc.containsKey("message") && (responseDoc["message"] == "Delivery not found" || responseDoc["message"] == "Aucune mise à jour effectuée"))
         {
-            Serial.println(doc["message"].as<String>());
+            Serial.println(responseDoc["message"].as<String>());
             http.end();
             return false;
         }
 
-        _deliveryState = doc["isDelivered"].as<int>();
-
+        _deliveryState = responseDoc["isDelivered"].as<int>();
         Serial.println("État de la livraison mis à jour: " + String(_deliveryState));
         http.end();
         return true;
@@ -437,4 +466,61 @@ bool MyAPI::updateDeliveryState(String uid)
     Serial.println("Erreur HTTP: " + String(httpCode));
     http.end();
     return false;
+}
+
+bool MyAPI::insertAccessTries(String uid, bool status)
+{
+    HTTPClient http;
+
+    Serial.println("Insertion d'une tentative d'accès pour UID: " + uid + "...");
+
+    String url = String(api_url) + "api/accessTry/insertAccessTry";
+    http.begin(url);
+    http.addHeader("Content-Type", "application/json");
+
+    StaticJsonDocument<200> doc;
+    doc["uid"] = uid;
+    doc["status"] = status;
+    String requestBody;
+    serializeJson(doc, requestBody);
+
+    int httpCode = http.POST(requestBody);
+
+    if (httpCode == HTTP_CODE_CREATED)
+    {
+        String payload = http.getString();
+        Serial.println("Réponse reçue: " + payload);
+
+        StaticJsonDocument<512> responseDoc;
+        DeserializationError error = deserializeJson(responseDoc, payload);
+
+        if (error)
+        {
+            Serial.print("Échec du parsing JSON: ");
+            Serial.println(error.c_str());
+            http.end();
+            return false;
+        }
+
+        if (responseDoc["status"].as<bool>())
+        {
+            _insertSuccess = true;
+            Serial.println("Tentative insérée avec succès");
+        }
+        else
+        {
+            Serial.println("Échec de l'insertion: " + responseDoc["message"].as<String>());
+        }
+
+        http.end();
+        return true;
+    }
+    else
+    {
+        Serial.print("Erreur HTTP: ");
+        Serial.println(httpCode);
+        Serial.println("URL utilisée: " + url);
+        http.end();
+        return false;
+    }
 }

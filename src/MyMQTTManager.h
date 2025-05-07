@@ -1,29 +1,23 @@
-/*
- * Fichier: MyMQTTManager.h
- * Créé le: 2024-03-01
- * Mis à jour le: 2024-05-01
- * Auteurs: Plamedi Ilunga
- * Contact: 2038993@cegeprdl.ca 
- * Version: 2.0
- * Description: Ce fichier definit la classe MyMQTTManager
- * Licence: Arduino
- */
 #ifndef MYMQTTMANAGER_H
 #define MYMQTTMANAGER_H
 
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include "MyAPI.h"
+#include "MyWifi.h"
 #include <Preferences.h>
 
 class MyMQTTManager
 {
 public:
     MyMQTTManager();
-    bool init(); // Nouvelle méthode pour initialiser avec les infos de l'API
+    bool init();
     void connect();
+    bool tryConnect();
+    void reset();
+    void saveBrokerInfo();
+    bool loadBrokerInfo();
 
-    // Méthodes pour publier des messages sur les topics
     void publishtopic1(const char *message);
     void publishtopic2(const char *message);
     void publishTempStatus(const char *message);
@@ -35,7 +29,6 @@ public:
     void publishRfidError(float number);
     void publishUltrasonicError(float number);
 
-    // Méthodes pour subscrire aux topics
     void subscribetopic1();
     void subscribetopic2();
     void subscribetempStatusTopic();
@@ -47,7 +40,6 @@ public:
     void subscriberfidErrorTopic();
     void subscribeultrasonicErrorTopic();
 
-
     void clientLoop();
     void setCallback();
     static void mqttCallbackHandler(char *topic, byte *payload, unsigned int length);
@@ -56,7 +48,6 @@ public:
     PubSubClient client;
 
 private:
-    // Ces variables stockeront les informations de l'API
     String server;
     String port;
     String user;
@@ -68,15 +59,14 @@ private:
     const char *oledStatusTopic = "casier1/oled/status";
     const char *rfidStatusTopic = "casier1/rfid/status";
     const char *ultrasonicStatusTopic = "casier1/ultrasonic/status";
-
     const char *tempErrorTopic = "casier1/temperature/error";
     const char *oledErrorTopic = "casier1/oled/error";
     const char *rfidErrorTopic = "casier1/rfid/error";
     const char *ultrasonicErrorTopic = "casier1/ultrasonic/error";
 
-
     WiFiClient espClient;
     MyAPI api;
+    MyWifi myWifi;
     Preferences preferences;
     String messageFirstTopic;
     String messageSecondTopic;

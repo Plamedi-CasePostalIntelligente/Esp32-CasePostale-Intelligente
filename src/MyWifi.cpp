@@ -1,24 +1,17 @@
-/*
- * Fichier: MyWifi.cpp
- * Créé le: 2024-03-01
- * Mis à jour le: 2025-02-20
- * Auteurs: Plamedi Ilunga 
- * Contact: 2038993@cegeprdl.ca 
- * Version: 1.0
- * Description: Ce fichier implemente la classe MyWifi
- * Licence: Arduino
- */
 #include "MyWifi.h"
 
 MyWifi::MyWifi() : buttonPressed(false), buttonPressTime(0), lastButtonState(LOW)
 {
-    pinMode(RESET_BUTTON, INPUT_PULLDOWN); // Configuration en INPUT_PULLDOWN comme dans votre exemple
+    pinMode(RESET_BUTTON, INPUT_PULLDOWN); // GPIO 4 avec pull-up interne
 }
 
 bool MyWifi::connect()
 {
     WiFiManager wm;
     wm.setConfigPortalTimeout(TIMEOUT);
+    wm.setAPCallback([](WiFiManager *myWiFiManager) {
+        Serial.println("Point d'accès démarré : " + String(myWiFiManager->getConfigPortalSSID()));
+    });
 
     Serial.println("Démarrage de la configuration WiFi...");
 
@@ -34,23 +27,27 @@ bool MyWifi::connect()
     Serial.print("Adresse IP: ");
     Serial.println(WiFi.localIP());
 
+    // Forcer la fermeture du point d'accès
+    wm.stopConfigPortal();
+    WiFi.softAPdisconnect(true);
+
     return true;
 }
 
 void MyWifi::checkResetButton()
 {
-    // Lecture de l'état actuel du bouton
+    // Lecture de l'état actuel du bouton (LOW quand pressé avec INPUT_PULLUP)
     bool currentButtonState = digitalRead(RESET_BUTTON);
 
-    // Détection d'un appui sur le bouton (transition de LOW à HIGH)
-    if (currentButtonState == HIGH && lastButtonState == LOW)
+    // Détection d'un appui sur le bouton (transition de HIGH à LOW)
+    if (currentButtonState == LOW && lastButtonState == HIGH)
     {
         buttonPressed = true;
         buttonPressTime = millis();
         Serial.println("Bouton pressé - début du compteur");
     }
     // Si le bouton est maintenu appuyé
-    else if (currentButtonState == HIGH && buttonPressed)
+    else if (currentButtonState == LOW && buttonPressed)
     {
         if (millis() - buttonPressTime >= RESET_TIME)
         {
@@ -62,14 +59,13 @@ void MyWifi::checkResetButton()
         }
     }
     // Si le bouton est relâché
-    else if (currentButtonState == LOW)
+    else if (currentButtonState == HIGH)
     {
         buttonPressed = false;
     }
 
     // Sauvegarde de l'état du bouton pour le prochain cycle
     lastButtonState = currentButtonState;
-    delay(50); // Anti-rebond comme dans votre exemple
 }
 
 String MyWifi::getLocalIP()

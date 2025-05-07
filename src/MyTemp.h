@@ -13,7 +13,7 @@
 class MyTemp
 {
 private:
-    const int DEFAULT_PIN = 25;
+    //const int DEFAULT_PIN = 25;
 
     int inputPinUsed=25;
     #define typeSensorUsed DHT22

@@ -1,13 +1,3 @@
-/*
- * Fichier: MyMQTTManager.cpp
- * Créé le: 2024-03-01
- * Mis à jour le: 2024-05-01
- * Auteurs: Plamedi Ilunga
- * Contact: 2038993@cegeprdl.ca
- * Version: 2.0
- * Description: Ce fichier definit la classe MyMQTTManager
- * Licence: Arduino
- */
 #include "MyMQTTManager.h"
 
 MyMQTTManager* MyMQTTManager::instance = nullptr;
@@ -18,6 +8,14 @@ MyMQTTManager::MyMQTTManager() : client(espClient) {
 
 bool MyMQTTManager::init()
 {
+    // Tenter de charger les informations du broker depuis la mémoire
+    if (loadBrokerInfo()) {
+        client.setServer(server.c_str(), port.toInt());
+        Serial.println("Broker MQTT chargé depuis la mémoire: " + server + ":" + port);
+        return true;
+    }
+
+    // Si aucune information valide n'est trouvée, appeler getBrokerInfo
     if (api.getBrokerInfo())
     {
         server = api.getMqttAddress();
@@ -25,134 +23,234 @@ bool MyMQTTManager::init()
         user = api.getMqttUser();
         password = api.getMqttPassword();
 
+        if (server.isEmpty() || port.isEmpty()) {
+            Serial.println("Erreur: Informations du broker MQTT invalides");
+            return false;
+        }
+
         client.setServer(server.c_str(), port.toInt());
+        saveBrokerInfo(); // Sauvegarder les nouvelles informations
+        Serial.println("Broker MQTT configuré: " + server + ":" + port);
         return true;
     }
+
+    Serial.println("Échec de la récupération des informations du broker");
     return false;
+}
+
+bool MyMQTTManager::tryConnect()
+{
+    if (!myWifi.isConnected()) {
+        Serial.println("WiFi non connecté. Impossible de se connecter au broker MQTT.");
+        return false;
+    }
+
+    if (client.connected()) {
+        return true;
+    }
+
+    Serial.println("Connexion au broker MQTT...");
+    if (client.connect("ESP32Client", user.c_str(), password.c_str()))
+    {
+        Serial.println("Connecté au broker MQTT");
+        subscribetopic1();
+        subscribetopic2();
+        subscribetempStatusTopic();
+        subscribeoledStatusTopic();
+        subscriberfidStatusTopic();
+        subscribeultrasonicStatusTopic();
+        subscribetempErrorTopic();
+        subscribeoledErrorTopic();
+        return true;
+    }
+    else
+    {
+        Serial.print("Échec, rc=");
+        Serial.print(client.state());
+        Serial.println(" Nouvel essai ultérieur");
+        return false;
+    }
 }
 
 void MyMQTTManager::connect()
 {
     setCallback();
-    while (!client.connected())
-    {
-        Serial.println("Connexion au broker MQTT...");
-        if (client.connect("ESP32Client", user.c_str(), password.c_str()))
-        {
-            Serial.println("Connecté au broker MQTT");
-            subscribetopic1();
-            subscribetopic2();
-        }
-        else
-        {
-            Serial.print("Échec, rc=");
-            Serial.print(client.state());
-            Serial.println(" nouvel essai dans 5 secondes");
-            delay(5000);
-        }
+    tryConnect();
+}
+
+void MyMQTTManager::reset()
+{
+    client.disconnect();
+    server = "";
+    port = "";
+    user = "";
+    password = "";
+    preferences.begin("mqtt", false);
+    preferences.clear();
+    preferences.end();
+    Serial.println("Connexion MQTT et préférences réinitialisées.");
+}
+
+void MyMQTTManager::saveBrokerInfo()
+{
+    preferences.begin("mqtt", false);
+    preferences.putString("server", server);
+    preferences.putString("port", port);
+    preferences.putString("user", user);
+    preferences.putString("password", password);
+    preferences.end();
+    Serial.println("Informations du broker sauvegardées dans la mémoire non volatile.");
+}
+
+bool MyMQTTManager::loadBrokerInfo()
+{
+    preferences.begin("mqtt", true);
+    server = preferences.getString("server", "");
+    port = preferences.getString("port", "");
+    user = preferences.getString("user", "");
+    password = preferences.getString("password", "");
+    preferences.end();
+    bool valid = !server.isEmpty() && !port.isEmpty();
+    if (valid) {
+        Serial.println("Informations du broker chargées depuis la mémoire non volatile.");
     }
+    return valid;
 }
 
 void MyMQTTManager::publishtopic1(const char *message)
 {
-    client.publish(topic1, message);
+    if (client.connected()) {
+        client.publish(topic1, message);
+    }
 }
 
 void MyMQTTManager::publishtopic2(const char *message)
 {
-    client.publish(topic2, message);
+    if (client.connected()) {
+        client.publish(topic2, message);
+    }
 }
 
 void MyMQTTManager::publishTempStatus(const char *message)
 {
-    client.publish(tempStatusTopic, message);
+    if (client.connected()) {
+        client.publish(tempStatusTopic, message);
+    }
 }
 
 void MyMQTTManager::publishOledStatus(const char *message)
 {
-    client.publish(oledStatusTopic, message);
+    if (client.connected()) {
+        client.publish(oledStatusTopic, message);
+    }
 }
 
 void MyMQTTManager::publishRfidStatus(const char *message)
 {
-    client.publish(rfidStatusTopic, message);
+    if (client.connected()) {
+        client.publish(rfidStatusTopic, message);
+    }
 }
 
 void MyMQTTManager::publishUltrasonicStatus(const char *message)
 {
-    client.publish(ultrasonicStatusTopic, message);
+    if (client.connected()) {
+        client.publish(ultrasonicStatusTopic, message);
+    }
 }
 
 void MyMQTTManager::publishTempError(float number)
 {
-    String message = floatToString(number, 1);
-    client.publish(tempErrorTopic, message.c_str());
+    if (client.connected()) {
+        String message = floatToString(number, 1);
+        client.publish(tempErrorTopic, message.c_str());
+    }
 }
 
 void MyMQTTManager::publishOledError(float number)
 {
-    String message = floatToString(number, 1);
-    client.publish(oledErrorTopic, message.c_str());
+    if (client.connected()) {
+        String message = floatToString(number, 1);
+        client.publish(oledErrorTopic, message.c_str());
+    }
 }
 
 void MyMQTTManager::publishRfidError(float number)
 {
-    String message = floatToString(number, 1);
-    client.publish(rfidErrorTopic, message.c_str());
+    if (client.connected()) {
+        String message = floatToString(number, 1);
+        client.publish(rfidErrorTopic, message.c_str());
+    }
 }
 
 void MyMQTTManager::publishUltrasonicError(float number)
 {
-    String message = floatToString(number, 1);
-    client.publish(ultrasonicErrorTopic, message.c_str());
+    if (client.connected()) {
+        String message = floatToString(number, 1);
+        client.publish(ultrasonicErrorTopic, message.c_str());
+    }
 }
 
 void MyMQTTManager::subscribetempStatusTopic()
 {
-    client.subscribe(tempStatusTopic);
+    if (client.connected()) {
+        client.subscribe(tempStatusTopic);
+    }
 }
 
 void MyMQTTManager::subscribeoledStatusTopic()
 {
-    client.subscribe(oledStatusTopic);
+    if (client.connected()) {
+        client.subscribe(oledStatusTopic);
+    }
 }
 
 void MyMQTTManager::subscribetempErrorTopic()
 {
-    client.subscribe(tempErrorTopic);
+    if (client.connected()) {
+        client.subscribe(tempErrorTopic);
+    }
 }
 
 void MyMQTTManager::subscriberfidStatusTopic()
 {
-    client.subscribe(rfidStatusTopic);
+    if (client.connected()) {
+        client.subscribe(rfidStatusTopic);
+    }
 }
 
 void MyMQTTManager::subscribeultrasonicStatusTopic()
 {
-    client.subscribe(ultrasonicStatusTopic);
+    if (client.connected()) {
+        client.subscribe(ultrasonicStatusTopic);
+    }
 }
 
 void MyMQTTManager::subscribeoledErrorTopic()
 {
-    client.subscribe(oledErrorTopic);
+    if (client.connected()) {
+        client.subscribe(oledErrorTopic);
+    }
 }
 
 void MyMQTTManager::subscribetopic1()
 {
-    client.subscribe(topic1);
+    if (client.connected()) {
+        client.subscribe(topic1);
+    }
 }
 
 void MyMQTTManager::subscribetopic2()
 {
-    client.subscribe(topic2);
+    if (client.connected()) {
+        client.subscribe(topic2);
+    }
 }
-
 
 void MyMQTTManager::setCallback()
 {
     client.setCallback(mqttCallbackHandler);
 }
-
 
 void MyMQTTManager::mqttCallbackHandler(char *topic, byte *payload, unsigned int length)
 {
@@ -167,52 +265,42 @@ void MyMQTTManager::mqttCallbackHandler(char *topic, byte *payload, unsigned int
     {
         instance->messageFirstTopic = message;
         Serial.println("Message reçu sur test: " + String(message));
-        Serial.println("Message reçu sur test: " + String(instance->messageFirstTopic));
     }
     else if (strcmp(topic, "Skibidy/Desiree") == 0)
     {
         instance->messageSecondTopic = message;
-       // Serial.println("Message reçu sur test2: " + String(message));
-       // Serial.println("Message reçu sur test2: " + String(instance->messageSecondTopic));  
-    }else if (strcmp(topic, "casier1/temperature/status") == 0)
+    }
+    else if (strcmp(topic, "casier1/temperature/status") == 0)
     {
         instance->messagetempStatusTopic = message;
-        // Serial.println("Message reçu sur casier1/temperature/status: " + String(message));
     }
     else if (strcmp(topic, "casier1/oled/status") == 0)
     {
         instance->messageoledStatusTopic = message;
-        // Serial.println("Message reçu sur casier1/oled/status: " + String(message));
     }
     else if (strcmp(topic, "casier1/rfid/status") == 0)
     {
         instance->messagerfidStatusTopic = message;
-        // Serial.println("Message reçu sur casier1/rfid/status: " + String(message));
     }
     else if (strcmp(topic, "casier1/ultrasonic/status") == 0)
     {
         instance->messageultrasonicStatusTopic = message;
-        // Serial.println("Message reçu sur casier1/ultrasonic/status: " + String(message));
     }
     else if (strcmp(topic, "casier1/temperature/error") == 0)
     {
         instance->messagetempErrorTopic = message;
-        // Serial.println("Message reçu sur casier1/temperature/error: " + String(message));
     }
     else if (strcmp(topic, "casier1/oled/error") == 0)
     {
         instance->messageoledErrorTopic = message;
-        // Serial.println("Message reçu sur casier1/oled/error: " + String(message));
     }
     else if (strcmp(topic, "casier1/rfid/error") == 0)
     {
         instance->messagerfidErrorTopic = message;
-        // Serial.println("Message reçu sur casier1/rfid/error: " + String(message));
     }
     else if (strcmp(topic, "casier1/ultrasonic/error") == 0)
     {
         instance->messageultrasonicErrorTopic = message;
-        // Serial.println("Message reçu sur casier1/ultrasonic/error: " + String(message));
     }
     else
     {
@@ -229,5 +317,7 @@ String MyMQTTManager::floatToString(float value, int precision)
 
 void MyMQTTManager::clientLoop()
 {
-    client.loop();
+    if (client.connected()) {
+        client.loop();
+    }
 }

@@ -1,16 +1,19 @@
 #include "MyUltrasonique.h"
 
-MyUltrasonique::MyUltrasonique()
+MyUltrasonique::MyUltrasonique(int trigPin, int echoPin)
 {
+    trig_Pin = trigPin;
+    echo_Pin = echoPin;
     pinMode(trig_Pin, OUTPUT);
     pinMode(echo_Pin, INPUT);
     duration_us = 0;
     distance_cm = 0;
     empty_box_distance = 0;
-    threshold = 2.0; // Seuil initial de 2 cm, ajustable selon tes besoins
+    threshold = 2.0;
+    hysteresis = 0.5;
     box_empty = true;
+    is_calibrated = false;
     sample_index = 0;
-    // Initialiser le tableau des échantillons à 0
     for (int i = 0; i < NUM_SAMPLES; i++) {
         distance_samples[i] = 0;
     }
@@ -18,10 +21,15 @@ MyUltrasonique::MyUltrasonique()
 
 bool MyUltrasonique::FindEmptyBoxDistance()
 {
-    float sum = 0;
-    const int num_measurements = 10; // 10 mesures pour la calibration
+    if (is_calibrated) {
+        Serial.println("Calibration déjà effectuée pour trig_Pin=" + String(trig_Pin) + ", ignorée.");
+        return true;
+    }
 
-    Serial.println("Calibration de la distance de la boîte vide...");
+    float sum = 0;
+    const int num_measurements = 10;
+
+    Serial.println("Calibration de la distance de la boîte vide pour trig_Pin=" + String(trig_Pin) + "...");
     for (int i = 0; i < num_measurements; i++) {
         digitalWrite(trig_Pin, LOW);
         delayMicroseconds(2);
@@ -29,24 +37,25 @@ bool MyUltrasonique::FindEmptyBoxDistance()
         delayMicroseconds(10);
         digitalWrite(trig_Pin, LOW);
 
-        duration_us = pulseIn(echo_Pin, HIGH, 30000); // Timeout de 30ms (env. 5m max)
+        duration_us = pulseIn(echo_Pin, HIGH, 50000);
         if (duration_us == 0) {
-            Serial.println("Erreur : aucune réponse du capteur ultrasonique");
+            Serial.println("Erreur : aucune réponse du capteur ultrasonique pour trig_Pin=" + String(trig_Pin));
             return false;
         }
 
-        float distance = (duration_us * 0.0343) / 2; // Conversion en cm
-        if (distance > 400 || distance < 2) { // Limites du capteur (2cm à 400cm)
-            Serial.println("Mesure hors plage : " + String(distance) + " cm");
+        float distance = (duration_us * 0.0343) / 2;
+        if (distance > 400 || distance < 2) {
+            Serial.println("Mesure hors plage : " + String(distance) + " cm pour trig_Pin=" + String(trig_Pin));
             return false;
         }
 
         sum += distance;
-        delay(50); // Petite pause entre les mesures
+        delay(50);
     }
 
     empty_box_distance = sum / num_measurements;
-    Serial.println("Distance de référence (boîte vide) : " + String(empty_box_distance) + " cm");
+    is_calibrated = true;
+    Serial.println("Distance de référence (boîte vide) : " + String(empty_box_distance) + " cm pour trig_Pin=" + String(trig_Pin));
     return true;
 }
 
@@ -58,38 +67,78 @@ float MyUltrasonique::GetDistance()
     delayMicroseconds(10);
     digitalWrite(trig_Pin, LOW);
 
-    duration_us = pulseIn(echo_Pin, HIGH, 30000); // Timeout de 30ms
+    duration_us = pulseIn(echo_Pin, HIGH, 50000);
     if (duration_us == 0) {
-        Serial.println("Erreur : capteur ultrasonique ne répond pas");
-        return distance_cm; // Retourne la dernière valeur valide
+        Serial.println("Erreur : capteur ultrasonique ne répond pas pour trig_Pin=" + String(trig_Pin));
+        return distance_cm;
     }
 
-    float raw_distance = (duration_us * 0.0343) / 2; // Conversion en cm
+    float raw_distance = (duration_us * 0.0343) / 2;
     if (raw_distance < 2 || raw_distance > 400) {
-        Serial.println("Distance hors plage : " + String(raw_distance) + " cm");
-        return distance_cm; // Garde la dernière valeur valide
+        Serial.println("Distance hors plage : " + String(raw_distance) + " cm pour trig_Pin=" + String(trig_Pin));
+        return distance_cm;
     }
 
-    // Ajouter la nouvelle mesure au tableau
     distance_samples[sample_index] = raw_distance;
     sample_index = (sample_index + 1) % NUM_SAMPLES;
 
-    // Calculer la moyenne mobile
     float sum = 0;
+    int valid_samples = 0;
     for (int i = 0; i < NUM_SAMPLES; i++) {
-        sum += distance_samples[i];
+        if (distance_samples[i] >= 2 && distance_samples[i] <= 400) {
+            sum += distance_samples[i];
+            valid_samples++;
+        }
     }
-    distance_cm = sum / NUM_SAMPLES;
+    distance_cm = valid_samples > 0 ? sum / valid_samples : distance_cm;
 
-    Serial.println("Distance mesurée : " + String(distance_cm) + " cm");
+    Serial.println("Distance mesurée : " + String(distance_cm) + " cm pour trig_Pin=" + String(trig_Pin));
     return distance_cm;
 }
 
 bool MyUltrasonique::IsBoxEmpty()
 {
+    if (!is_calibrated) {
+        Serial.println("Erreur : capteur non calibré pour trig_Pin=" + String(trig_Pin));
+        return box_empty;
+    }
+
     float current_distance = GetDistance();
-    // La boîte est vide si la distance est proche de la distance de référence
-    box_empty = (current_distance >= (empty_box_distance - threshold));
-    Serial.println("État de la boîte : " + String(box_empty ? "Vide" : "Pleine"));
+    if (current_distance < 2 || current_distance > 400) {
+        Serial.println("Distance invalide, état inchangé : " + String(box_empty ? "Vide" : "Pleine") + " pour trig_Pin=" + String(trig_Pin));
+        return box_empty;
+    }
+
+    if (box_empty && current_distance < (empty_box_distance - threshold - hysteresis)) {
+        box_empty = false;
+    } else if (!box_empty && current_distance > (empty_box_distance - threshold + hysteresis)) {
+        box_empty = true;
+    }
+
+    Serial.println("État de la boîte : " + String(box_empty ? "Vide" : "Pleine") + " pour trig_Pin=" + String(trig_Pin));
     return box_empty;
+}
+
+bool MyUltrasonique::IsSensorResponsive()
+{
+    digitalWrite(trig_Pin, LOW);
+    delayMicroseconds(2);
+    digitalWrite(trig_Pin, HIGH);
+    delayMicroseconds(10);
+    digitalWrite(trig_Pin, LOW);
+
+    duration_us = pulseIn(echo_Pin, HIGH, 50000);
+    if (duration_us == 0) {
+        Serial.println("Test réactivité : capteur ultrasonique ne répond pas pour trig_Pin=" + String(trig_Pin));
+        return false;
+    }
+
+    float distance = (duration_us * 0.0343) / 2;
+    if (distance < 2 || distance > 400) {
+        Serial.println("Test réactivité : mesure hors plage : " + String(distance) + " cm pour trig_Pin=" + String(trig_Pin));
+        return false;
+    }
+
+    Serial.println("Test réactivité : capteur ultrasonique répond correctement pour trig_Pin=" + String(trig_Pin));
+    return true;
 }
