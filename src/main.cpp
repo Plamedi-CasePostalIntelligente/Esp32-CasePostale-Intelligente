@@ -9,12 +9,16 @@
 #include "MyOled.h"
 #include "MyTemp.h"
 #include "MyButton.h"
+#include "myLed.h"
 
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET 4
 #define BTN_RIGHT 4 // Bouton droit
-#define BTN_LEFT 16
+#define BTN_LEFT 0 // Bouton gauche
+
+const int LED_ROUGE_PIN = 21;  // Choisir un GPIO compatible pour l'ESP32
+const int LED_VERTE_PIN = 22; 
 int RELAY_PIN_SOLENOIDE1 = 26; // GPIO26 pour Casier 1
 int RELAY_PIN_SOLENOIDE2 = 27; // GPIO27 pour Casier 2
 
@@ -59,13 +63,15 @@ String currentUid = "";
 unsigned long solenoidOpenTime = 0;
 const unsigned long SOLENOID_TIMEOUT = 5000; // 5 secondes
 unsigned long lastComponentCheck = 0;
-const unsigned long CHECK_INTERVAL = 20000; // Vérifier toutes les 20 secondes
+const unsigned long CHECK_INTERVAL = 3600000; // Vérifier toutes les 20 secondes
 unsigned long lastReconnectAttempt = 0;
 const unsigned long RECONNECT_INTERVAL = 5000; // Reconnexion toutes les 5 secondes
 
 // Variables pour suivre les états précédents
 bool prevBoxEmpty1 = true;
 bool prevBoxEmpty2 = true;
+MyLed ledRouge(LED_ROUGE_PIN);
+MyLed ledVerte(LED_VERTE_PIN);
 
 // void setupUltrasonicTests() {
 //     for (int i = 0; i < BUFFER_SIZE; i++) {
@@ -146,40 +152,57 @@ bool prevBoxEmpty2 = true;
 // }
 
 void checkComponents() {
+    bool error = false;
+
     if (mytemp && !mytemp->init()) {
         mymqttmanager->publishTempStatus("Erreur: Capteur de température non détecté");
+        error = true;
     } else if (mytemp && mytemp->init()) {
         mymqttmanager->publishTempStatus("Capteur de température opérationnel");
     }
 
     if (myOled && !myOled->isOperational()) {
         mymqttmanager->publishOledStatus("Erreur: Écran OLED non détecté");
+        error = true;
     } else if (myOled && myOled->isOperational()) {
         mymqttmanager->publishOledStatus("Écran OLED opérationnel");
     }
 
     if (myRFID && !myRFID->IsRFIDDetected()) {
-        mymqttmanager->publishRfidStatus("Erreur: Module RFID non détecté");
+        mymqttmanager->publishRfidStatus("Erreur: RFID non détecté");
+        error = true;
     } else if (myRFID && myRFID->IsRFIDDetected()) {
-        mymqttmanager->publishRfidStatus("Module RFID opérationnel");
+        mymqttmanager->publishRfidStatus("RFID opérationnel");
     }
 
     if (myUltrasonique1 && !myUltrasonique1->IsSensorResponsive()) {
-        mymqttmanager->publishUltrasonicStatus("Erreur: Capteur ultrasonique 1 non détecté");
+        mymqttmanager->publishUltrasonicStatus("Erreur: Capteur ultrasonique non détecté");
+        error = true;
     } else if (myUltrasonique1 && myUltrasonique1->IsSensorResponsive()) {
-        mymqttmanager->publishUltrasonicStatus("Capteur ultrasonique 1 opérationnel");
+        mymqttmanager->publishUltrasonicStatus("Capteur ultrasonique opérationnel");
     }
 
-    if (myUltrasonique2 && !myUltrasonique2->IsSensorResponsive()) {
-        mymqttmanager->publishUltrasonicStatus("Erreur: Capteur ultrasonique 2 non détecté");
-    } else if (myUltrasonique2 && myUltrasonique2->IsSensorResponsive()) {
-        mymqttmanager->publishUltrasonicStatus("Capteur ultrasonique 2 opérationnel");
+    if (myUltrasonique1 && !myUltrasonique1->IsSensorResponsive()) {
+        mymqttmanager->publishUltrasonicStatus("Erreur: Capteur ultrasonique non détecté");
+        error = true;
+    } else if (myUltrasonique1 && myUltrasonique1->IsSensorResponsive()) {
+        mymqttmanager->publishUltrasonicStatus("Capteur ultrasonique opérationnel");
+    }
+
+    if(error)
+    {
+        ledRouge.turnOn(); // Allume la LED rouge en cas d'erreur
+    }
+    else
+    {
+        ledRouge.turnOff(); // Éteint la LED rouge si tout est opérationnel
     }
 }
 
 void handleRFIDLogic(String uid) {
+    ledRouge.turnOn(); // Allume la LED rouge lors de la détection d'une carte RFID
     if (!myapi->checkUserExists(uid)) {
-        Serial.println("Utilisateur non existant, enregistrement de la tentative...");
+        //Serial.println("Utilisateur non existant, enregistrement de la tentative...");
         myapi->insertAccessTries(uid, false);
         return;
     } else {
@@ -187,12 +210,13 @@ void handleRFIDLogic(String uid) {
     }
 
     if (!myapi->verifyIfFactor(uid)) {
-        Serial.println("Erreur lors de la vérification du type d'utilisateur");
+        //Serial.println("Erreur lors de la vérification du type d'utilisateur");
         return;
     }
     bool isFacteur = myapi->getIsFacteur();
-    Serial.println("Utilisateur est " + String(isFacteur ? "facteur" : "client"));
+    //Serial.println("Utilisateur est " + String(isFacteur ? "facteur" : "client"));
 
+    /*
     if (!myapi->verifyIfHasDelivery(uid)) {
         Serial.println("Aucune commande associée, arrêt");
         return;
@@ -206,21 +230,12 @@ void handleRFIDLogic(String uid) {
     if (isDelivered) {
         Serial.println("Commande déjà livrée, arrêt");
         return;
-    }
+    }*/
 
     bool boxEmpty1 = myUltrasonique1->IsBoxEmpty();
     bool boxEmpty2 = myUltrasonique2->IsBoxEmpty();
     etatCasier1 = boxEmpty1 ? "Vide" : "Pleine";
     etatCasier2 = boxEmpty2 ? "Vide" : "Pleine";
-
-    if (boxEmpty1 != prevBoxEmpty1) {
-        myapi->updateCaseState(uid);
-        prevBoxEmpty1 = boxEmpty1;
-    }
-    if (boxEmpty2 != prevBoxEmpty2) {
-        myapi->updateCaseState(uid);
-        prevBoxEmpty2 = boxEmpty2;
-    }
 
     if (myapi->openCase(uid)) {
         String caseNumbers = myapi->getCaseNumbers();
@@ -245,6 +260,7 @@ void handleRFIDLogic(String uid) {
                     solenoidOpenTime = millis();
                 }
             }
+            ledRouge.turnOff(); // Éteint la LED rouge après ouverture du casier
         } else {
             String caseList = caseNumbers + ",";
             int start = 0;
@@ -275,22 +291,37 @@ void handleRFIDLogic(String uid) {
                     }
                 }
             }
+            ledRouge.turnOff(); // Éteint la LED rouge après ouverture du casier
         }
+    }
+
+    if (boxEmpty1 != prevBoxEmpty1) {
+        myapi->updateCaseState(uid);
+        prevBoxEmpty1 = boxEmpty1;
+    }
+    if (boxEmpty2 != prevBoxEmpty2) {
+        myapi->updateCaseState(uid);
+        prevBoxEmpty2 = boxEmpty2;
     }
 }
 
 void setup() {
     Serial.begin(9600);
+    ledRouge.init();
+    ledVerte.init();
+    //ledRouge.turnOn(); // Allume la LED rouge au démarrage
 
     mywifi = new MyWifi();
     if (!mywifi->connect()) {
         Serial.println("Erreur de connexion WiFi");
         etatWifi = "Erreur WiFi";
+        ledVerte.turnOff(); // Éteint la LED verte si la connexion échoue
     } else {
         etatWifi = "WiFi OK";
         Serial.println("Connexion WiFi établie!");
         Serial.print("Adresse IP: ");
         Serial.println(mywifi->getLocalIP());
+        ledVerte.turnOn(); // Allume la LED verte si la connexion est réussie
     }
 
     myapi = new MyAPI();
@@ -302,7 +333,7 @@ void setup() {
     }
 
     myUltrasonique1 = new MyUltrasonique(32, 33); // Casier 1 : trig_Pin=32, echo_Pin=33
-    myUltrasonique2 = new MyUltrasonique(2, 15); // Casier 2 : trig_Pin=25, echo_Pin=26
+    myUltrasonique2 = new MyUltrasonique(12, 15); // Casier 2 : trig_Pin=25, echo_Pin=26
     if (!myUltrasonique1->FindEmptyBoxDistance()) {
         Serial.println("Erreur de calibration du capteur ultrasonique 1");
     } else {
@@ -355,7 +386,7 @@ void loop() {
     }
 
     String newCardRead = myRFID ? myRFID->ReadCardSerial() : "";
-    if (newCardRead != "" && newCardRead != currentUid) {
+    if ((newCardRead != "" && newCardRead != currentUid) || (newCardRead == currentUid && newCardRead != "")) {
         currentUid = newCardRead;
         Serial.println("UID détecté: " + currentUid);
         handleRFIDLogic(currentUid);
@@ -366,6 +397,7 @@ void loop() {
     buttonrightState = myButtonRIGHT ? myButtonRIGHT->ButtonPressed() : 0;
     temperature = mytemp ? mytemp->getTemperature() : NAN;
     Serial.println("Température: " + String(temperature) + " °C");
+    mymqttmanager->publishtopic1(String(temperature).c_str());
 
     if (buttonleftState == 1) {
         if (myOled) myOled->moveLeftButton();

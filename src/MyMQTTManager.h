@@ -53,7 +53,7 @@ private:
     String user;
     String password;
 
-    const char *topic1 = "test";
+    const char *topic1 = "casier1/temperature";
     const char *topic2 = "Skibidy/Desiree";
     const char *tempStatusTopic = "casier1/temperature/status";
     const char *oledStatusTopic = "casier1/oled/status";

@@ -407,12 +407,12 @@ bool MyAPI::updateCaseState(String uid)
         }
 
         _caseState = responseDoc["response"].as<int>();
-        Serial.println("État du casier mis à jour: " + String(_caseState));
+        //Serial.println("État du casier mis à jour: " + String(_caseState));
         http.end();
         return true;
     }
 
-    Serial.println("Erreur HTTP: " + String(httpCode));
+    //Serial.println("Erreur HTTP: " + String(httpCode));
     http.end();
     return false;
 }
@@ -421,7 +421,7 @@ bool MyAPI::updateDeliveryState(String uid)
 {
     HTTPClient http;
 
-    Serial.println("Mise à jour de l'état de la livraison pour UID: " + uid + "...");
+    //Serial.println("Mise à jour de l'état de la livraison pour UID: " + uid + "...");
 
     String url = String(api_url) + "api/lockers/updateDeliveryState";
     http.begin(url);
@@ -458,7 +458,7 @@ bool MyAPI::updateDeliveryState(String uid)
         }
 
         _deliveryState = responseDoc["isDelivered"].as<int>();
-        Serial.println("État de la livraison mis à jour: " + String(_deliveryState));
+        //Serial.println("État de la livraison mis à jour: " + String(_deliveryState));
         http.end();
         return true;
     }
@@ -472,7 +472,7 @@ bool MyAPI::insertAccessTries(String uid, bool status)
 {
     HTTPClient http;
 
-    Serial.println("Insertion d'une tentative d'accès pour UID: " + uid + "...");
+    //Serial.println("Insertion d'une tentative d'accès pour UID: " + uid + "...");
 
     String url = String(api_url) + "api/accessTry/insertAccessTry";
     http.begin(url);
@@ -505,11 +505,11 @@ bool MyAPI::insertAccessTries(String uid, bool status)
         if (responseDoc["status"].as<bool>())
         {
             _insertSuccess = true;
-            Serial.println("Tentative insérée avec succès");
+            //Serial.println("Tentative insérée avec succès");
         }
         else
         {
-            Serial.println("Échec de l'insertion: " + responseDoc["message"].as<String>());
+            //Serial.println("Échec de l'insertion: " + responseDoc["message"].as<String>());
         }
 
         http.end();

@@ -3,19 +3,17 @@
 MyMQTTManager* MyMQTTManager::instance = nullptr;
 
 MyMQTTManager::MyMQTTManager() : client(espClient) {
-    instance = this; // On stocke l'instance pour le callback statique
+    instance = this;
 }
 
 bool MyMQTTManager::init()
 {
-    // Tenter de charger les informations du broker depuis la mémoire
     if (loadBrokerInfo()) {
         client.setServer(server.c_str(), port.toInt());
         Serial.println("Broker MQTT chargé depuis la mémoire: " + server + ":" + port);
         return true;
     }
 
-    // Si aucune information valide n'est trouvée, appeler getBrokerInfo
     if (api.getBrokerInfo())
     {
         server = api.getMqttAddress();
@@ -29,7 +27,7 @@ bool MyMQTTManager::init()
         }
 
         client.setServer(server.c_str(), port.toInt());
-        saveBrokerInfo(); // Sauvegarder les nouvelles informations
+        saveBrokerInfo();
         Serial.println("Broker MQTT configuré: " + server + ":" + port);
         return true;
     }
@@ -53,14 +51,17 @@ bool MyMQTTManager::tryConnect()
     if (client.connect("ESP32Client", user.c_str(), password.c_str()))
     {
         Serial.println("Connecté au broker MQTT");
-        subscribetopic1();
-        subscribetopic2();
-        subscribetempStatusTopic();
-        subscribeoledStatusTopic();
-        subscriberfidStatusTopic();
-        subscribeultrasonicStatusTopic();
-        subscribetempErrorTopic();
-        subscribeoledErrorTopic();
+        // Souscription à tous les topics
+        client.subscribe(topic1);
+        client.subscribe(topic2);
+        client.subscribe(tempStatusTopic);
+        client.subscribe(oledStatusTopic);
+        client.subscribe(rfidStatusTopic);
+        client.subscribe(ultrasonicStatusTopic);
+        client.subscribe(tempErrorTopic);
+        client.subscribe(oledErrorTopic);
+        client.subscribe(rfidErrorTopic);
+        client.subscribe(ultrasonicErrorTopic);
         return true;
     }
     else
@@ -188,62 +189,6 @@ void MyMQTTManager::publishUltrasonicError(float number)
     if (client.connected()) {
         String message = floatToString(number, 1);
         client.publish(ultrasonicErrorTopic, message.c_str());
-    }
-}
-
-void MyMQTTManager::subscribetempStatusTopic()
-{
-    if (client.connected()) {
-        client.subscribe(tempStatusTopic);
-    }
-}
-
-void MyMQTTManager::subscribeoledStatusTopic()
-{
-    if (client.connected()) {
-        client.subscribe(oledStatusTopic);
-    }
-}
-
-void MyMQTTManager::subscribetempErrorTopic()
-{
-    if (client.connected()) {
-        client.subscribe(tempErrorTopic);
-    }
-}
-
-void MyMQTTManager::subscriberfidStatusTopic()
-{
-    if (client.connected()) {
-        client.subscribe(rfidStatusTopic);
-    }
-}
-
-void MyMQTTManager::subscribeultrasonicStatusTopic()
-{
-    if (client.connected()) {
-        client.subscribe(ultrasonicStatusTopic);
-    }
-}
-
-void MyMQTTManager::subscribeoledErrorTopic()
-{
-    if (client.connected()) {
-        client.subscribe(oledErrorTopic);
-    }
-}
-
-void MyMQTTManager::subscribetopic1()
-{
-    if (client.connected()) {
-        client.subscribe(topic1);
-    }
-}
-
-void MyMQTTManager::subscribetopic2()
-{
-    if (client.connected()) {
-        client.subscribe(topic2);
     }
 }
 

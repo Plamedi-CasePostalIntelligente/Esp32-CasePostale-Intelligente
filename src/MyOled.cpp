@@ -1,11 +1,3 @@
-/**
-    Gestion d'un écran OLED utilisant un GPIO d'un contrôleur
-
-    @file MyOled.cpp
-    @author Alain Dubé (modifié pour 2 boutons, menu principal toujours affiché)
-    @version 1.2 03/04/25
-*/
-
 #include <Arduino.h>
 #include "MyOled.h"
 
@@ -26,22 +18,17 @@ void MyOled::vATaskSecondCount(void *pvParameters) {
 
 // Vérifie si l'OLED est opérationnel sans réinitialiser son état
 bool MyOled::isOperational() {
-    // Vérifier si l'OLED répond en envoyant une commande I2C simple
-    Wire.beginTransmission(0x3C); // Adresse I2C par défaut pour SSD1306
+    Wire.beginTransmission(0x3C);
     int error = Wire.endTransmission();
-    return (error == 0); // Retourne true si l'OLED répond
+    return (error == 0);
 }
 
-// Initialisation
+// Initialisation (inchangée)
 int MyOled::init(int displaySplashTime, uint8_t addrI2C) {
-    // Configurer les broches SDA et SCL personnalisées
     Wire.begin(MY_OLED_SDA_PIN, MY_OLED_SCL_PIN);
-
-    // Initialiser l'écran OLED avec les broches configurées
     if (!begin(SSD1306_SWITCHCAPVCC, addrI2C)) {
-        return 1; // Échec de l'initialisation
+        return 1;
     }
-
     PushMan24x48Pointers[0] = const_cast<unsigned char *>(&PushMan24x48_1[0]);
     PushMan24x48Pointers[1] = const_cast<unsigned char *>(&PushMan24x48_2[0]);
     PushMan24x48Pointers[2] = const_cast<unsigned char *>(&PushMan24x48_3[0]);
@@ -49,19 +36,16 @@ int MyOled::init(int displaySplashTime, uint8_t addrI2C) {
     PushMan24x48Pointers[4] = const_cast<unsigned char *>(&PushMan24x48_5[0]);
     PushMan24x48Pointers[5] = const_cast<unsigned char *>(&PushMan24x48_6[0]);
     PushMan24x48Pointers[6] = const_cast<unsigned char *>(&PushMan24x48_7[0]);
-
     cp437(true);
     clearDisplay();
     setTextColor(SSD1306_WHITE);
     setTextSize(1);
     setCursor(1, 1);
     display();
-
     if (displaySplashTime != 0)
         displaySplash(displaySplashTime);
-
     xTaskCreate(vATaskSecondCount, "vATask Loop", 10000, NULL, 1, NULL);
-    displayMainMenu(); // Affiche le menu principal dès l’init
+    displayMainMenu();
     return 0;
 }
 
@@ -74,23 +58,32 @@ void MyOled::veilleDelay(int nbreSecondes) {
 bool MyOled::veilleCheck() {
     if (MyOled::veilleTimeLapse > veilleNbreSecondes) {
         clearDisplay();
-        displayMainMenu(); // Revient au menu principal en cas de veille
+        displayMainMenu();
         MyOled::veilleTimeLapse = 0;
         veilleActif = true;
     }
     return veilleActif;
 }
 
-// Affichage du menu principal
+// Affichage du menu principal avec encadré
 void MyOled::displayMainMenu() {
     clearDisplay();
-    setTextSize(1);
     setTextColor(SSD1306_WHITE);
 
+    // Dessiner un cadre autour du menu (128x64 pixels, marges de 2 pixels)
+    drawRect(2, 2, 124, 60, SSD1306_WHITE);
+
+    // Afficher un titre "Menu" en haut
+    setTextSize(1);
+    setCursor(50, 6);
+    print("Menu");
+
+    // Afficher les options du menu
+    setTextSize(1); // Police plus petite pour compacité
     for (int i = 0; i < 4; i++) {
-        setCursor(10, 18 + i * 10);
+        setCursor(12, 18 + i * 10); // Espacement réduit pour les 4 options
         if (i == currentMenuIndex) {
-            print("> ");
+            print("> "); // Indicateur de sélection
         } else {
             print("  ");
         }
@@ -99,54 +92,70 @@ void MyOled::displayMainMenu() {
     display();
 }
 
-// Affichage des sous-menus
+// Affichage des sous-menus avec encadré
 void MyOled::displaySubMenu(int subMenuIndex, float temperature, const char *etatCasier1, const char *etatCasier2, const char *etatWifi) {
     clearDisplay();
-    setTextSize(1);
     setTextColor(SSD1306_WHITE);
-    setCursor(10, 18);
 
+    // Dessiner un cadre autour du sous-menu
+    drawRect(2, 2, 124, 60, SSD1306_WHITE);
+
+    // Afficher le titre du sous-menu
+    setTextSize(2); // Titre en plus grand
+    setCursor(10, 6);
+    switch (subMenuIndex) {
+        case 0: print("Casier 1"); break;
+        case 1: print("Casier 2"); break;
+        case 2: print("Temperat."); break;
+        case 3: print("Etat Wifi"); break;
+    }
+
+    // Afficher les détails
+    setTextSize(1); // Détails en police standard
     switch (subMenuIndex) {
         case 0: // État C1
-            printIt(10, 18, "Casier 1", false);
-            printIt(10, 28, "Etat: ", true);
-            printIt(10, 38, etatCasier1, true);
+            printIt(10, 24, "Etat: ", false);
+            printIt(40, 24, etatCasier1, true);
             break;
         case 1: // État C2
-            printIt(10, 18, "Casier 2", false);
-            printIt(10, 28, "Etat: ", true);
-            printIt(10, 38, etatCasier2, true);
+            printIt(10, 24, "Etat: ", false);
+            printIt(40, 24, etatCasier2, true);
             break;
         case 2: // Température
-            printIt(10, 18, "Temperature", false);
             char tempStr[10];
             snprintf(tempStr, sizeof(tempStr), "%.1f C", temperature);
-            printIt(10, 28, tempStr, true);
+            printIt(10, 24, "Valeur: ", false);
+            printIt(50, 24, tempStr, true);
             break;
         case 3: // Statut Système
-            printIt(10, 18, "Statut System", false);
-            printIt(10, 28, etatWifi, true);
+            printIt(10, 24, "Etat: ", false);
+            printIt(40, 24, etatWifi, true);
             break;
     }
+
+    // Ajouter une indication "Retour" en bas
+    setTextSize(1);
+    setCursor(10, 50);
+    print("[Droit] Retour");
+    display();
 }
 
 // Bouton gauche : Défilement dans le menu principal
 void MyOled::moveLeftButton() {
-    if (currentSubMenu == -1) { // Dans le menu principal
+    if (currentSubMenu == -1) {
         currentMenuIndex++;
-        if (currentMenuIndex >= 4) { // Boucle au début après le dernier item
+        if (currentMenuIndex >= 4) {
             currentMenuIndex = 0;
         }
         displayMainMenu();
     }
-    // Pas de défilement dans les sous-menus
 }
 
 // Bouton droit : Entrée ou sortie du sous-menu
 void MyOled::moveRightButton(float temp, const char *etatCasier1, const char *etatCasier2, const char *etatWifi) {
     if (currentSubMenu == -1) {
         currentSubMenu = currentMenuIndex;
-        displaySubMenu(currentSubMenu, temp, etatCasier1, etatCasier2, etatWifi); // Passe la température réelle
+        displaySubMenu(currentSubMenu, temp, etatCasier1, etatCasier2, etatWifi);
     } else {
         currentSubMenu = -1;
         displayMainMenu();
@@ -180,9 +189,9 @@ void MyOled::printIt(const char *toDisplay, bool displayAfter, int makeDelaySeco
 
 void MyOled::printSpecialChar(const char *spacialCaractere, int makeDelaySecondes) {
     if (spacialCaractere == "é")
-        write(130); // é
+        write(130);
     if (spacialCaractere == "o")
-        write(248); // Degré Celsius
+        write(248);
     delay(makeDelaySecondes);
 }
 
